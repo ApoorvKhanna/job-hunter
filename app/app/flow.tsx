@@ -32,6 +32,8 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
   const [profile, setProfile] = useState<Profile | null>(null)
   const [days, setDays] = useState(14)
   const [jobs, setJobs] = useState<Job[] | null>(null)
+  const [jobsPage, setJobsPage] = useState(0)
+  const [moreJobs, setMoreJobs] = useState(true)
   const [job, setJob] = useState<Job | null>(null)
   const [people, setPeople] = useState<Person[] | null>(null)
   const [emails, setEmails] = useState<Record<string, { work: string[]; personal: string[] }>>({})
@@ -74,14 +76,16 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
       setStep(1)
     }
   }
-  // Step 1 → 2
-  async function findJobs() {
+  // Step 1 → 2 (page 0) or append the next page
+  async function findJobs(page = 0) {
     if (!profile) return
-    setBusy('jobs')
-    const data = settle(await post<Job[]>('/api/jobs', { titles: profile.titles.filter((t) => t.trim()), country_code: profile.country_code, remote: profile.remote, seniority: profile.seniority, days }))
+    setBusy(page === 0 ? 'jobs' : 'more')
+    const data = settle(await post<Job[]>('/api/jobs', { titles: profile.titles.filter((t) => t.trim()), country_code: profile.country_code, remote: profile.remote, seniority: profile.seniority, days, page }))
     setBusy(null)
     if (data) {
-      setJobs(data)
+      setJobs((prev) => (page === 0 || !prev ? data : [...prev, ...data.filter((j) => !prev.some((p) => p.id === j.id))]))
+      setJobsPage(page)
+      setMoreJobs(data.length >= 10)
       setStep(2)
     }
   }
@@ -179,7 +183,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
             </div>
           </div>
           <div className="row">
-            <button className="btn" onClick={findJobs} disabled={busy !== null || profile.titles.filter((t) => t.trim()).length === 0}>
+            <button className="btn" onClick={() => findJobs(0)} disabled={busy !== null || profile.titles.filter((t) => t.trim()).length === 0}>
               {busy === 'jobs' ? <span className="spin" /> : null} Find my jobs <span className="price">{inr(PRICE_PAISE.jobs)}</span>
             </button>
             <button className="btn ghost" onClick={() => setStep(0)}>back</button>
@@ -207,7 +211,14 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
               </div>
             </div>
           ))}
-          <button className="btn ghost sm" onClick={() => setStep(1)}>back</button>
+          <div className="row">
+            {jobs.length > 0 && moreJobs ? (
+              <button className="btn" onClick={() => findJobs(jobsPage + 1)} disabled={busy !== null}>
+                {busy === 'more' ? <span className="spin" /> : null} See 10 more jobs <span className="price">{inr(PRICE_PAISE.jobs)}</span>
+              </button>
+            ) : null}
+            <button className="btn ghost sm" onClick={() => setStep(1)}>back</button>
+          </div>
         </section>
       ) : null}
 

@@ -45,13 +45,14 @@ function teamOf(raw: RawJob['hiring_team']): Job['hiring_team'] {
 }
 
 export async function POST(req: Request) {
-  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; seniority?: string | null; days?: number }>(req)
+  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; seniority?: string | null; days?: number; page?: number }>(req)
   const titles = (body.titles ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
   if (titles.length === 0) return Response.json({ ok: false, code: 'invalid', message: 'Add at least one job title.' })
   const params: Record<string, unknown> = {
     job_title_or: titles,
     posted_at_max_age_days: Math.min(60, Math.max(1, Number(body.days ?? 14))),
     limit: 10,
+    page: Math.min(20, Math.max(0, Math.floor(Number(body.page ?? 0)))),
   }
   if (body.country_code && /^[A-Z]{2}$/i.test(body.country_code)) params.job_country_code_or = [body.country_code.toUpperCase()]
   if (body.remote === true) params.remote = true
