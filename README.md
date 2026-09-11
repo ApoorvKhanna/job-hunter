@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Job Hunt Agent
 
-## Getting Started
+Paste your resume. It pulls matching postings from TheirStack, finds the
+engineering manager or recruiter at each company via ContactOut, reveals
+their email, and drafts a 120-word note. Every step is priced before you
+click it.
 
-First, run the development server:
+**It has no API key of its own.** Each user signs in with Vaaya OAuth and
+every call runs on that user's own Vaaya credit. The app stores nothing: the
+user's tokens sit in one AES-GCM encrypted httpOnly cookie.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Live: https://jobhunt-agent.vercel.app
+
+## How it works
+
+| Step | Vaaya call | Price |
+| --- | --- | --- |
+| Read the resume | `POST /api/llm/v1/chat/completions` (Claude Haiku 4.5) | under 1¢ |
+| Ten matching postings | `theirstack/jobs` with `limit: 10` | 40¢ flat |
+| Three people to write to | `contactout/people-search` with `page_size: 3` | 3¢ |
+| Reveal one email | `contactout/linkedin-contacts` | 10¢ |
+| Draft the note | LLM router again | under 1¢ |
+
+A full round on one company is about 55¢. New Vaaya accounts start with a
+welcome credit, so a first round is free for the user.
+
+## Auth
+
+Vaaya is a standard OAuth 2.1 authorization server with PKCE and dynamic
+client registration (`https://vaaya.ai/.well-known/oauth-authorization-server`).
+The app is a public client (`token_endpoint_auth_method: none`). A user who
+is not signed in to Vaaya is bounced through signup and returned to the
+consent screen, so a new visitor becomes a new Vaaya account in one flow.
+
+Access tokens live 12 hours, refresh tokens 60 days. `lib/vaaya.ts` refreshes
+on a 401 and the route wrapper re-sets the cookie.
+
+## Run it yourself
+
+1. Register a client once (it is idempotent for the same name + redirect):
+
+   ```bash
+   curl -s https://vaaya.ai/oauth/register -H 'content-type: application/json' -d '{
+     "client_name": "Job Hunt Agent",
+     "client_uri": "https://YOUR-HOST",
+     "redirect_uris": ["https://YOUR-HOST/api/auth/callback"],
+     "scope": "vaaya:pay vaaya:read"
+   }'
+   ```
+
+   Redirect URIs must be `https` (or `http://127.0.0.1:PORT` for local dev).
+
+2. Set env: `VAAYA_CLIENT_ID`, `APP_URL` (no trailing slash), `SESSION_SECRET`
+   (32+ random chars). Optional `VAAYA_ISSUER` for previews.
+
+3. `pnpm install && pnpm dev`. For local dev register a second client with
+   `http://127.0.0.1:3000/api/auth/callback` and set `APP_URL` to match.
+
+## Claude Code skill
+
+`skill/SKILL.md` runs the same flow from a terminal through the Vaaya MCP
+server. Copy it into `~/.claude/skills/jobhunt/` and say "hunt jobs for me
+with this resume".
+
+## Layout
+
+```
+app/page.tsx              landing + sign in
+app/hunt/                 the flow (client component)
+app/api/auth/*            OAuth start / callback / logout
+app/api/{parse,jobs,contact,email,draft}   one Vaaya call each
+lib/vaaya.ts              the only file that talks to Vaaya
+lib/session.ts            encrypted cookie
+lib/prices.ts             every price shown in the UI
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT.
