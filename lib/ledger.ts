@@ -1,7 +1,7 @@
 // Per-user money, one private JSON blob per user. Writes are optimistic:
 // read with the ETag, write with ifMatch, retry on a precondition failure.
 // Amounts are integer paise. Nothing here ever goes negative.
-import { get, put } from '@vercel/blob'
+import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 import { START_CREDIT_PAISE } from './env'
 
 export interface Entry { at: string; kind: 'credit' | 'debit'; paise: number; note: string }
@@ -86,8 +86,8 @@ async function mutate(sub: string, fn: (a: Account) => void): Promise<Account> {
       await save(next, found.etag || null)
       return next
     } catch (err) {
-      const name = (err as { name?: string })?.name ?? ''
-      if (!/Precondition/i.test(name) || attempt === 3) throw err
+      const stale = err instanceof BlobPreconditionFailedError || /precondition/i.test(String((err as Error)?.message ?? ''))
+      if (!stale || attempt === 3) throw err
     }
   }
   throw new Error('ledger_contention')
