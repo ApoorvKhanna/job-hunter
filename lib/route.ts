@@ -61,6 +61,9 @@ export async function paidStep<T>(
     if (err instanceof InsufficientBalance) {
       return json({ ok: false, code: 'recharge', message: 'Your balance is too low for this step.', balance_paise: err.balancePaise, need_paise: price })
     }
-    throw err
+    // The provider already did the work. Never turn a ledger hiccup into a
+    // failed step for the user: hand back the result, skip the charge, log it.
+    console.error('[ledger] debit failed after success', step, session.sub, err)
+    return json({ ok: true, data: result.data, balance_paise: account.balancePaise, charged_paise: 0 })
   }
 }

@@ -108,8 +108,11 @@ export async function POST(req: Request) {
         }
       }
     }
+    const t0 = Date.now()
     add(await rungFind(company, company_domain ?? null, title))
+    const t1 = Date.now()
     if (people.length < 2) add(await rungContactOut(company, title))
+    console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: people.length < 2 ? Date.now() - t1 : 0, people: people.length }))
     if (people.length === 0) {
       console.log('[contact] no people', company, company_domain)
       return { ok: false, code: 'no_people', message: `Could not find anyone at ${company} yet. Nothing was charged. Try another posting, or draft a note without a name.` }

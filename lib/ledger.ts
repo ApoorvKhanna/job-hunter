@@ -22,7 +22,9 @@ async function load(sub: string): Promise<{ account: Account; etag: string } | n
   const blob = await get(path(sub), { access: 'private', useCache: false })
   if (!blob) return null
   const text = await new Response(blob.stream).text()
-  const etag = blob.headers?.get('etag') ?? blob.headers?.get('ETag') ?? ''
+  // The CDN sometimes hands back a weak validator (W/"…"); the store's
+  // ifMatch only accepts the strong form.
+  const etag = (blob.headers?.get('etag') ?? blob.headers?.get('ETag') ?? '').replace(/^W\//, '')
   return { account: JSON.parse(text) as Account, etag }
 }
 
@@ -88,6 +90,7 @@ async function mutate(sub: string, fn: (a: Account) => void): Promise<Account> {
     } catch (err) {
       const stale = err instanceof BlobPreconditionFailedError || /precondition/i.test(String((err as Error)?.message ?? ''))
       if (!stale || attempt === 3) throw err
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)))
     }
   }
   throw new Error('ledger_contention')

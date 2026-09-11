@@ -13,12 +13,16 @@ type StepIndex = 0 | 1 | 2 | 3 | 4
 const SENIORITY = ['junior', 'mid_level', 'senior', 'staff', 'c_level'] as const
 
 async function post<T>(path: string, body: unknown): Promise<Api<T>> {
-  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  if (res.status === 401) {
-    window.location.href = '/'
-    return { ok: false, code: 'signed_out', message: 'Signed out.' }
+  try {
+    const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    if (res.status === 401) {
+      window.location.href = '/'
+      return { ok: false, code: 'signed_out', message: 'Signed out.' }
+    }
+    return (await res.json()) as Api<T>
+  } catch {
+    return { ok: false, code: 'network', message: 'That step did not go through. Nothing was charged. Try again.' }
   }
-  return (await res.json()) as Api<T>
 }
 
 export default function Flow({ name, email, balancePaise, upi }: { name: string; email: string; balancePaise: number; upi: { id: string; name: string } }) {
