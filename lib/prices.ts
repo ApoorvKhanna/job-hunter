@@ -1,14 +1,16 @@
-// Every price the UI shows next to a button. Vaaya quotes these per call;
-// a refused or failed call costs nothing.
-export const PRICES = {
-  parse: 'under 1¢',
-  jobs: '40¢',
-  contact: '3¢',
-  email: '10¢',
-  draft: 'under 1¢',
+// What each step costs the user, in paise. Debited only when the step succeeds.
+export const PRICE_PAISE = {
+  parse: 100,
+  jobs: 4000,
+  contact: 300,
+  email: 1000,
+  draft: 100,
 } as const
+export type Step = keyof typeof PRICE_PAISE
 
-export const JOBS_PRICE_CENTS = 40
-export const CONTACT_PAGE_SIZE = 3
-export const CONTACT_PRICE_CENTS = CONTACT_PAGE_SIZE
-export const EMAIL_PRICE_CENTS = 10
+export function inr(paise: number): string {
+  const rupees = paise / 100
+  return Number.isInteger(rupees) ? `₹${rupees}` : `₹${rupees.toFixed(2)}`
+}
+
+export const RECHARGE_OPTIONS_INR = [49, 99, 199, 499] as const

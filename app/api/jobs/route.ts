@@ -1,11 +1,9 @@
-// Matching postings from TheirStack. Flat 40¢ for up to 10 jobs.
-import { JOBS_PRICE_CENTS } from '@/lib/prices'
-import { readJson, withVaaya } from '@/lib/route'
+import { run } from '@/lib/provider'
+import { paidStep, readJson } from '@/lib/route'
 import type { Job } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
-
 
 interface RawJob {
   id: number
@@ -38,28 +36,18 @@ function teamOf(raw: RawJob['hiring_team']): Job['hiring_team'] {
   if (!Array.isArray(raw)) return []
   return raw
     .map((p) => {
-      const name = String(p.full_name ?? p.name ?? [p.first_name, p.last_name].filter(Boolean).join(' ') ?? '').trim()
+      const name = String(p.full_name ?? p.name ?? [p.first_name, p.last_name].filter(Boolean).join(' ')).trim()
       if (!name) return null
-      return {
-        name,
-        title: (p.title ?? p.role ?? null) as string | null,
-        linkedin_url: (p.linkedin_url ?? p.url ?? null) as string | null,
-      }
+      return { name, title: (p.title ?? p.role ?? null) as string | null, linkedin_url: (p.linkedin_url ?? p.url ?? null) as string | null }
     })
     .filter((p): p is NonNullable<typeof p> => !!p)
     .slice(0, 3)
 }
 
 export async function POST(req: Request) {
-  const body = await readJson<{
-    titles?: string[]
-    country_code?: string
-    remote?: boolean | null
-    seniority?: string | null
-    days?: number
-  }>(req)
+  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; seniority?: string | null; days?: number }>(req)
   const titles = (body.titles ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
-  if (titles.length === 0) return Response.json({ ok: false, code: 'invalid_params', message: 'Add at least one job title.' })
+  if (titles.length === 0) return Response.json({ ok: false, code: 'invalid', message: 'Add at least one job title.' })
   const params: Record<string, unknown> = {
     job_title_or: titles,
     posted_at_max_age_days: Math.min(60, Math.max(1, Number(body.days ?? 14))),
@@ -69,8 +57,8 @@ export async function POST(req: Request) {
   if (body.remote === true) params.remote = true
   if (body.seniority) params.job_seniority_or = [body.seniority]
 
-  return withVaaya<Job[]>(async (v) => {
-    const out = await v.run<{ data?: RawJob[] }>('theirstack', 'jobs', params, JOBS_PRICE_CENTS)
+  return paidStep<Job[]>('jobs', async () => {
+    const out = await run<{ data?: RawJob[] }>('theirstack', 'jobs', params, 40)
     if (!out.ok) return out
     const jobs: Job[] = (out.data.data ?? []).map((j) => ({
       id: j.id,
@@ -87,6 +75,6 @@ export async function POST(req: Request) {
       description: (j.description ?? '').slice(0, 4000),
       hiring_team: teamOf(j.hiring_team),
     }))
-    return { ok: true, data: jobs, chargedCents: out.chargedCents, balanceCents: out.balanceCents }
+    return { ok: true, data: jobs }
   })
 }

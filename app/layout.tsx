@@ -6,9 +6,8 @@ const sans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const mono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Job Hunt Agent',
-  description:
-    'Paste your resume. It finds matching postings, the person hiring, their email, and drafts the note. Runs on your own Vaaya credit.',
+  title: 'Job Hunter',
+  description: 'Upload your resume. Get matching jobs, the person hiring, their email, and a note you can send. ₹49 to start.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

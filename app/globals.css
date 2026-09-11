@@ -81,3 +81,21 @@ pre.note { white-space: pre-wrap; font: 14px/1.5 inherit; background: var(--bg);
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 480px) { h1 { font-size: 26px; } .wrap { padding-inline: 16px; } }
+
+/* stepper */
+.status { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 22px; }
+.status li { flex: 1; display: flex; flex-direction: column; gap: 6px; cursor: default; }
+.status li.done { cursor: pointer; }
+.status li .dot { display: none; }
+.status li .label { font-size: 12px; color: var(--muted); }
+.status li::before { content: ''; display: block; height: 3px; border-radius: 2px; background: var(--line); }
+.status li.done::before { background: var(--ink); }
+.status li.current::before { background: var(--ink); opacity: 0.5; animation: pulse 1.2s ease-in-out infinite; }
+.status li.current .label { color: var(--ink); font-weight: 500; }
+@keyframes pulse { 50% { opacity: 1; } }
+.drop { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface); }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 0 0 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+.chip.on { border-color: var(--ink); font-weight: 600; }
+button.chip { cursor: pointer; font: inherit; color: inherit; }
+button.pill { cursor: pointer; color: inherit; }
+select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }

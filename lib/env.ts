@@ -1,15 +1,27 @@
-// Every knob the app reads. VAAYA_CLIENT_ID comes from one POST to
-// https://vaaya.ai/oauth/register (see README); APP_URL must match the
-// redirect_uri registered there exactly.
-export const ISSUER = (process.env.VAAYA_ISSUER ?? 'https://vaaya.ai').replace(/\/$/, '')
-export const CLIENT_ID = process.env.VAAYA_CLIENT_ID ?? ''
+// Every knob the app reads. Nothing customer-facing names the data provider.
+export const APP_NAME = 'Job Hunter'
 export const APP_URL = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 export const SESSION_SECRET = process.env.SESSION_SECRET ?? ''
-export const REDIRECT_URI = `${APP_URL}/api/auth/callback`
-export const SCOPES = 'vaaya:pay vaaya:read'
 
-export function assertConfigured(): string | null {
-  if (!CLIENT_ID) return 'VAAYA_CLIENT_ID is not set'
-  if (!SESSION_SECRET || SESSION_SECRET.length < 32) return 'SESSION_SECRET must be at least 32 chars'
-  return null
+export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? ''
+export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? ''
+export const GOOGLE_REDIRECT_URI = `${APP_URL}/api/auth/google/callback`
+
+// The data backend. One operator key; users never see it.
+export const PROVIDER_URL = (process.env.PROVIDER_URL ?? 'https://vaaya.ai').replace(/\/$/, '')
+export const PROVIDER_API_KEY = process.env.PROVIDER_API_KEY ?? ''
+
+// Money. Balances are integer paise. Every new account starts with this.
+export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)
+export const UPI_ID = process.env.UPI_ID ?? ''
+export const UPI_NAME = process.env.UPI_NAME ?? APP_NAME
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
+
+export function missingConfig(): string[] {
+  const out: string[] = []
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) out.push('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET')
+  if (!SESSION_SECRET || SESSION_SECRET.length < 32) out.push('SESSION_SECRET')
+  if (!PROVIDER_API_KEY) out.push('PROVIDER_API_KEY')
+  if (!process.env.BLOB_READ_WRITE_TOKEN) out.push('BLOB_READ_WRITE_TOKEN')
+  return out
 }

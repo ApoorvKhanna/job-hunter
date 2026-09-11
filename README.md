@@ -1,77 +1,69 @@
-# Job Hunt Agent
+# Job Hunter
 
-Paste your resume. It pulls matching postings from TheirStack, finds the
-engineering manager or recruiter at each company via ContactOut, reveals
-their email, and drafts a 120-word note. Every step is priced before you
-click it.
+Upload a resume. Get matching postings, the person hiring at each company,
+their email, and a short note to send. Every step is priced in rupees, charged
+only on success. New accounts start with ₹49; recharge by UPI.
 
-**It has no API key of its own.** Each user signs in with Vaaya OAuth and
-every call runs on that user's own Vaaya credit. The app stores nothing: the
-user's tokens sit in one AES-GCM encrypted httpOnly cookie.
+Live: https://job-hunter-in.vercel.app
 
-Live: https://jobhunt-agent.vercel.app
+## How it is built
 
-## How it works
+- Next.js 15, no database server. Each user's balance and history is one
+  private JSON blob in Vercel Blob (`users/<google-sub>.json`), written with
+  optimistic ETag checks.
+- Sign in with Google (plain OAuth 2.0, no auth library). Identity lives in
+  one AES-GCM encrypted cookie.
+- Job, contact and drafting data come from a metered data backend behind one
+  operator key. The user never sees that backend. Prices in `lib/prices.ts`
+  are what the user pays; the backend's cost per step is roughly the same
+  number in US cents.
+- UPI recharges are manual: the user pays the QR, types the UTR, and the
+  operator approves it on `/admin?token=…`. The credit lands on approval.
 
-| Step | Vaaya call | Price |
-| --- | --- | --- |
-| Read the resume | `POST /api/llm/v1/chat/completions` (Claude Haiku 4.5) | under 1¢ |
-| Ten matching postings | `theirstack/jobs` with `limit: 10` | 40¢ flat |
-| Three people to write to | `contactout/people-search` with `page_size: 3` | 3¢ |
-| Reveal one email | `contactout/linkedin-contacts` | 10¢ |
-| Draft the note | LLM router again | under 1¢ |
+## Steps and prices
 
-A full round on one company is about 55¢. New Vaaya accounts start with a
-welcome credit, so a first round is free for the user.
+| Step | Price |
+| --- | --- |
+| Read the resume | ₹1 |
+| Ten matching postings | ₹40 |
+| Three people at a company | ₹3 |
+| Reveal one email | ₹10 |
+| Draft the note | ₹1 |
 
-## Auth
+## Setup
 
-Vaaya is a standard OAuth 2.1 authorization server with PKCE and dynamic
-client registration (`https://vaaya.ai/.well-known/oauth-authorization-server`).
-The app is a public client (`token_endpoint_auth_method: none`). A user who
-is not signed in to Vaaya is bounced through signup and returned to the
-consent screen, so a new visitor becomes a new Vaaya account in one flow.
+Environment variables (all on Vercel → Settings → Environment Variables):
 
-Access tokens live 12 hours, refresh tokens 60 days. `lib/vaaya.ts` refreshes
-on a 401 and the route wrapper re-sets the cookie.
+| Name | What |
+| --- | --- |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth web client with redirect URI `https://<host>/api/auth/google/callback` |
+| `PROVIDER_API_KEY` | The operator's data-backend key |
+| `SESSION_SECRET` | 32+ random characters |
+| `APP_URL` | `https://<host>`, no trailing slash |
+| `BLOB_READ_WRITE_TOKEN` | From the connected Vercel Blob store |
+| `UPI_ID`, `UPI_NAME` | Where recharges go, e.g. `name@upi` |
+| `ADMIN_TOKEN` | Guards `/admin` and the recharge approval API |
+| `START_CREDIT_INR` | Optional, default 49 |
 
-## Run it yourself
-
-1. Register a client once (it is idempotent for the same name + redirect):
-
-   ```bash
-   curl -s https://vaaya.ai/oauth/register -H 'content-type: application/json' -d '{
-     "client_name": "Job Hunt Agent",
-     "client_uri": "https://YOUR-HOST",
-     "redirect_uris": ["https://YOUR-HOST/api/auth/callback"],
-     "scope": "vaaya:pay vaaya:read"
-   }'
-   ```
-
-   Redirect URIs must be `https` (or `http://127.0.0.1:PORT` for local dev).
-
-2. Set env: `VAAYA_CLIENT_ID`, `APP_URL` (no trailing slash), `SESSION_SECRET`
-   (32+ random chars). Optional `VAAYA_ISSUER` for previews.
-
-3. `pnpm install && pnpm dev`. For local dev register a second client with
-   `http://127.0.0.1:3000/api/auth/callback` and set `APP_URL` to match.
-
-## Claude Code skill
-
-`skill/SKILL.md` runs the same flow from a terminal through the Vaaya MCP
-server. Copy it into `~/.claude/skills/jobhunt/` and say "hunt jobs for me
-with this resume".
+```bash
+pnpm install
+pnpm dev
+```
 
 ## Layout
 
 ```
-app/page.tsx              landing + sign in
-app/hunt/                 the flow (client component)
-app/api/auth/*            OAuth start / callback / logout
-app/api/{parse,jobs,contact,email,draft}   one Vaaya call each
-lib/vaaya.ts              the only file that talks to Vaaya
-lib/session.ts            encrypted cookie
-lib/prices.ts             every price shown in the UI
+app/page.tsx               landing + Google sign-in
+app/app/                   the five-step flow with the status bar
+app/admin/                 approve UPI recharges
+app/api/auth/google/*      sign in / callback / logout
+app/api/extract            PDF / DOCX / TXT → text (free)
+app/api/{parse,jobs,contact,email,draft}   one paid step each
+app/api/recharge           user reports a UPI payment
+app/api/admin/recharges    operator lists / approves
+lib/ledger.ts              balances (Vercel Blob)
+lib/provider.ts            the data backend client
+lib/prices.ts              every price the user sees
 ```
 
 MIT.
