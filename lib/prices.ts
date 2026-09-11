@@ -1,7 +1,7 @@
 // What each step costs the user, in paise. Debited only when the step succeeds.
 export const PRICE_PAISE = {
   parse: 100,
-  jobs: 4000,
+  jobs: 2000,
   contact: 300,
   email: 1000,
   draft: 100,

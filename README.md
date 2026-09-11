@@ -25,7 +25,7 @@ Live: https://job-hunter-in.vercel.app
 | Step | Price |
 | --- | --- |
 | Read the resume | ₹1 |
-| Ten matching postings | ₹40 |
+| Ten matching postings | ₹20 |
 | Three people at a company | ₹3 |
 | Reveal one email | ₹10 |
 | Draft the note | ₹1 |
