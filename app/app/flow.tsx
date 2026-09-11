@@ -92,7 +92,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
     setNote(null)
     setPerson(null)
     setBusy('people')
-    const data = settle(await post<Person[]>('/api/contact', { company: j.company, job_title: j.title }))
+    const data = settle(await post<Person[]>('/api/contact', { company: j.company, company_domain: j.company_domain, job_title: j.title }))
     setBusy(null)
     if (data) {
       setPeople(data)
@@ -214,7 +214,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
       {step === 3 && job && people ? (
         <section>
           <h2>People at {job.company}</h2>
-          <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Reveal an email, then draft the note to that person.</p>
+          <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Managers first, recruiters next. Reveal an email, then draft the note to that person.</p>
           {people.length === 0 ? <p className="muted">No current managers or recruiters found. You can still draft a note to the hiring manager.</p> : null}
           <div className="card">
             {people.map((p) => {
