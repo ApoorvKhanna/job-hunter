@@ -10,7 +10,6 @@ type Api<T> = { ok: true; data: T; balance_paise: number; charged_paise?: number
 
 const STEPS = ['Resume', 'Profile', 'Jobs', 'People', 'Note'] as const
 type StepIndex = 0 | 1 | 2 | 3 | 4
-const SENIORITY = ['junior', 'mid_level', 'senior', 'staff', 'c_level'] as const
 
 async function post<T>(path: string, body: unknown): Promise<Api<T>> {
   try {
@@ -116,7 +115,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
   // Step 3 → 4
   async function draft(p: Person | null) {
     if (!job) return
-    setBusy('draft')
+    setBusy(p ? `draft:${p.linkedin_url}` : 'draft')
     const data = settle(await post<string>('/api/draft', { resume, job: { title: job.title, company: job.company, description: job.description, url: job.url }, person: p ? { name: p.name, title: p.title } : undefined }))
     setBusy(null)
     if (data) {
@@ -170,13 +169,6 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
               </label>
               <label className="row" style={{ gap: 6 }}>
                 <input type="checkbox" checked={profile.remote === true} onChange={(e) => setProfile({ ...profile, remote: e.target.checked ? true : null })} /> Remote only
-              </label>
-              <label className="row" style={{ gap: 6 }}>
-                Level
-                <select value={profile.seniority ?? ''} onChange={(e) => setProfile({ ...profile, seniority: (e.target.value || null) as Profile['seniority'] })}>
-                  <option value="">any</option>
-                  {SENIORITY.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-                </select>
               </label>
               <label className="row" style={{ gap: 6 }}>
                 Posted in last
@@ -249,7 +241,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
                       </button>
                     ) : null}
                     <button className="btn sm" onClick={() => draft(p)} disabled={busy !== null}>
-                      {busy === 'draft' ? <span className="spin" /> : null} Draft note <span className="price">{inr(PRICE_PAISE.draft)}</span>
+                      {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft note <span className="price">{inr(PRICE_PAISE.draft)}</span>
                     </button>
                   </div>
                 </div>
