@@ -38,6 +38,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       </p>
       <p className="small muted">Every new account starts with ₹49. Recharge by UPI when it runs out.</p>
 
+      <h2>How it works</h2>
+      <div className="steps">
+        <div><span>Sign in with Google. Every new account starts with ₹49.</span></div>
+        <div><span>Upload your resume as a PDF, or paste it in. We read it and work out which job titles suit you.</span></div>
+        <div><span>We show you ten jobs posted in the last two weeks that match.</span></div>
+        <div><span>Pick one. We find the manager or recruiter hiring for it, and get you their email address.</span></div>
+        <div><span>We write the email for you, in your own words. Copy it and send it.</span></div>
+      </div>
+
+      <h2>What we do</h2>
+      <ul className="plain">
+        <li><b>We read your resume</b> and turn it into a real job search, so you are not guessing at keywords.</li>
+        <li><b>We find jobs posted in the last two weeks</b>, from company career pages and job boards, not a stale database.</li>
+        <li><b>We find the person doing the hiring</b>, usually the engineering manager or the recruiter, not a careers@ inbox.</li>
+        <li><b>We get you their email address</b>, so you can write to them directly instead of applying and waiting.</li>
+        <li><b>We write the first email for you</b>, in your voice, using your actual experience against that one posting.</li>
+      </ul>
+
       <h2>What a step costs</h2>
       <div className="steps">
         <div><span>Read your resume <span className="price">{inr(PRICE_PAISE.parse)}</span></span></div>
@@ -46,7 +64,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div><span>Reveal one person&apos;s email <span className="price">{inr(PRICE_PAISE.email)}</span></span></div>
         <div><span>Draft the note <span className="price">{inr(PRICE_PAISE.draft)}</span></span></div>
       </div>
-      <p className="small muted">A failed step is never charged. Your resume stays in your browser.</p>
+      <p className="small muted">A failed step is never charged. Everything you find is saved to your account, and looking at it again is free.</p>
     </main>
   )
 }

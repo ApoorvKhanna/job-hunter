@@ -116,3 +116,7 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 .tab.on { border-color: var(--ink); color: var(--ink); font-weight: 500; }
 .tab .count { font-family: var(--mono); font-size: 11px; opacity: 0.6; }
 .variants { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+
+ul.plain { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
+ul.plain li { padding-left: 18px; position: relative; }
+ul.plain li::before { content: ''; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); opacity: 0.35; }
