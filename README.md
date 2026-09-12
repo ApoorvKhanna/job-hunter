@@ -13,8 +13,11 @@ Live: https://job-hunter-in.vercel.app
   optimistic ETag checks.
 - Sign in with Google (plain OAuth 2.0, no auth library). Identity lives in
   one AES-GCM encrypted cookie.
-- Job, contact and drafting data come from a metered data backend behind one
-  operator key. The user never sees that backend. Prices in `lib/prices.ts`
+- Jobs come from JSearch (OpenWeb Ninja on RapidAPI, Google Jobs underneath)
+  when `RAPIDAPI_KEY` is set, which is roughly 100x cheaper per job than the
+  previous vendor. Without that key the app falls back to the old metered
+  source automatically. Contacts and drafting run through a metered backend
+  behind one operator key. The user never sees either backend. Prices in `lib/prices.ts`
   are what the user pays; the backend's cost per step is roughly the same
   number in US cents.
 - UPI recharges are manual: the user pays the QR, types the UTR, and the
@@ -37,7 +40,8 @@ Environment variables (all on Vercel → Settings → Environment Variables):
 | Name | What |
 | --- | --- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth web client with redirect URI `https://<host>/api/auth/google/callback` |
-| `PROVIDER_API_KEY` | The operator's data-backend key |
+| `PROVIDER_API_KEY` | The operator's data-backend key (contacts, drafting, and the jobs fallback) |
+| `RAPIDAPI_KEY` | RapidAPI key subscribed to JSearch. Set it and jobs switch to the cheap source. |
 | `SESSION_SECRET` | 32+ random characters |
 | `APP_URL` | `https://<host>`, no trailing slash |
 | `BLOB_READ_WRITE_TOKEN` | From the connected Vercel Blob store |

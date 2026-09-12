@@ -9,7 +9,7 @@ export interface Profile {
 }
 
 export interface Job {
-  id: number
+  id: string
   title: string
   company: string
   company_domain: string | null

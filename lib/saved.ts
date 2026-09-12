@@ -6,7 +6,7 @@ import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 export interface SavedJob {
   kind: 'job'
   at: string
-  id: number
+  id: string
   title: string
   company: string
   location: string
