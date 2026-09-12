@@ -13,11 +13,19 @@ Live: https://job-hunter-in.vercel.app
   optimistic ETag checks.
 - Sign in with Google (plain OAuth 2.0, no auth library). Identity lives in
   one AES-GCM encrypted cookie.
-- Jobs come from JSearch (OpenWeb Ninja on RapidAPI, Google Jobs underneath)
-  when `RAPIDAPI_KEY` is set, which is roughly 100x cheaper per job than the
-  previous vendor. Without that key the app falls back to the old metered
-  source automatically. Contacts and drafting run through a metered backend
-  behind one operator key. The user never sees either backend. Prices in `lib/prices.ts`
+- Jobs come from a two-source cascade. JSearch (OpenWeb Ninja on RapidAPI,
+  Google Jobs underneath) runs first at roughly 1/100th the per-job cost. If
+  it returns fewer than 10 fresh matches, TheirStack tops the page up inside
+  the same date window, so the deeper India coverage stays available and the
+  flat per-call fee is only paid on a miss. Without `RAPIDAPI_KEY` the app
+  runs on TheirStack alone. Contacts and drafting run through a metered
+  backend behind one operator key. The user never sees either backend.
+- Every search logs per-source counts (`[jobs] {"jsearch":7,"theirstack":4,…}`),
+  which is the raw data for comparing source depth on identical queries.
+- Note on coverage: JSearch does not reliably index naukri.com. If naukri
+  turns out to carry a real share of Indian matches, the fix is a
+  naukri-specific source or keeping TheirStack for India queries. An Indeed
+  scraper does not close that gap; it is a different pool of employers. Prices in `lib/prices.ts`
   are what the user pays; the backend's cost per step is roughly the same
   number in US cents.
 - UPI recharges are manual: the user pays the QR, types the UTR, and the

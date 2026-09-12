@@ -49,39 +49,60 @@ function teamOf(raw: RawJob['hiring_team']): Job['hiring_team'] {
     .slice(0, 3)
 }
 
-async function legacySearch(titles: string[], days: number, country: string | null, remote: boolean, page: number): Promise<Job[] | { error: string; message: string }> {
-  const base: Record<string, unknown> = { job_title_or: titles, limit: 10, page }
-  const tiers: Array<Record<string, unknown>> = [
-    { ...base, posted_at_max_age_days: days, ...(country ? { job_country_code_or: [country] } : {}), ...(remote ? { remote: true } : {}) },
-  ]
-  const widened: Record<string, unknown> = { ...base, posted_at_max_age_days: Math.max(days, 30) }
-  if (country) widened.job_country_code_or = [country]
-  if (JSON.stringify(widened) !== JSON.stringify(tiers[0])) tiers.push(widened)
-  if (country) tiers.push({ ...base, posted_at_max_age_days: Math.max(days, 30) })
-
-  for (const params of tiers) {
-    const out = await run<{ data?: RawJob[] }>('theirstack', 'jobs', params, 40)
-    if (!out.ok) return { error: out.code, message: out.message }
-    const rows = out.data.data ?? []
-    if (rows.length === 0) continue
-    return rows.map((j) => ({
-      id: String(j.id),
-      title: j.job_title,
-      company: j.company,
-      company_domain: j.company_domain ?? null,
-      company_linkedin: j.company_object?.linkedin_url ?? null,
-      location: j.short_location ?? j.location ?? '',
-      remote: !!j.remote,
-      salary: salaryOf(j),
-      seniority: j.seniority ?? null,
-      posted: j.date_posted,
-      url: j.final_url ?? j.url,
-      description: (j.description ?? '').slice(0, 4000),
-      hiring_team: teamOf(j.hiring_team),
-    }))
+/** One TheirStack page. Flat fee per call regardless of rows, so always ask
+ *  for the full 10 — a top-up of 3 rows costs exactly what 10 rows cost. */
+async function legacySearch(
+  titles: string[],
+  days: number,
+  country: string | null,
+  remote: boolean,
+  page: number,
+): Promise<Job[] | { error: string; message: string }> {
+  const params: Record<string, unknown> = {
+    job_title_or: titles,
+    limit: 10,
+    page,
+    posted_at_max_age_days: days,
+    ...(country ? { job_country_code_or: [country] } : {}),
+    ...(remote ? { remote: true } : {}),
   }
-  return []
+  const out = await run<{ data?: RawJob[] }>('theirstack', 'jobs', params, 40)
+  if (!out.ok) return { error: out.code, message: out.message }
+  return (out.data.data ?? []).map((j) => ({
+    id: String(j.id),
+    title: j.job_title,
+    company: j.company,
+    company_domain: j.company_domain ?? null,
+    company_linkedin: j.company_object?.linkedin_url ?? null,
+    location: j.short_location ?? j.location ?? '',
+    remote: !!j.remote,
+    salary: salaryOf(j),
+    seniority: j.seniority ?? null,
+    posted: j.date_posted,
+    url: j.final_url ?? j.url,
+    description: (j.description ?? '').slice(0, 4000),
+    hiring_team: teamOf(j.hiring_team),
+  }))
 }
+
+/** Merge sources without showing the same posting twice. Google Jobs and
+ *  TheirStack describe the same role differently, so match on company+title. */
+function mergeJobs(...lists: Job[][]): Job[] {
+  const seen = new Set<string>()
+  const out: Job[] = []
+  for (const list of lists) {
+    for (const j of list) {
+      const k = `${j.company.trim().toLowerCase()}|${j.title.trim().toLowerCase()}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(j)
+    }
+  }
+  return out
+}
+
+/** Below this many fresh matches we top up from the pricier, deeper source. */
+const THIN = 10
 
 export async function POST(req: Request) {
   const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; days?: number; page?: number }>(req)
@@ -95,29 +116,55 @@ export async function POST(req: Request) {
   return paidStep<Job[]>(
     'jobs',
     async () => {
+      const stats: Record<string, number> = {}
       let jobs: Job[] = []
+
       if (jsearchEnabled()) {
-        // Tier 1 is what the user asked for. Empty? widen the window and drop
-        // the country once, on our own cost — they are only charged for rows.
-        const tiers: Array<{ days: number; country: string | null }> = [{ days, country }]
-        if (days < 30) tiers.push({ days: 30, country })
-        if (country) tiers.push({ days: Math.max(days, 30), country: null })
-        for (let i = 0; i < tiers.length; i++) {
-          const t = tiers[i]
-          const out = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page })
-          if (!out.ok) return { ok: false, code: out.code, message: out.message }
-          console.log('[jobs] jsearch', JSON.stringify({ tier: i, titles, ...t, remote, page, rows: out.jobs.length }))
-          if (out.jobs.length > 0) {
-            jobs = out.jobs
-            break
+        // 1. The cheap source, at exactly the window the user asked for.
+        const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page })
+        if (!first.ok) return { ok: false, code: first.code, message: first.message }
+        stats.jsearch = first.jobs.length
+        jobs = first.jobs
+
+        // 2. Thin result? Top up from the deeper source, still inside the
+        //    user's window so everything we show stays fresh. This is the
+        //    only path that costs real money, and only on a miss.
+        if (jobs.length < THIN) {
+          const topUp = await legacySearch(titles, days, country, remote, page)
+          if (Array.isArray(topUp)) {
+            stats.theirstack = topUp.length
+            jobs = mergeJobs(jobs, topUp).slice(0, THIN)
+          } else {
+            // The fallback failing is not the user's problem when the cheap
+            // source already found something.
+            stats.theirstack = -1
+            if (jobs.length === 0) return { ok: false, code: topUp.error, message: topUp.message }
+          }
+        }
+
+        // 3. Nothing at all? Widen the cheap source before giving up.
+        if (jobs.length === 0) {
+          for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
+            if (t.days === days && t.country === country) continue
+            const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page })
+            if (!wide.ok) break
+            if (wide.jobs.length > 0) {
+              stats.jsearch_widened = wide.jobs.length
+              jobs = wide.jobs
+              break
+            }
           }
         }
       } else {
         const out = await legacySearch(titles, days, country, remote, page)
         if (!Array.isArray(out)) return { ok: false, code: out.error, message: out.message }
-        console.log('[jobs] legacy', JSON.stringify({ titles, days, country, remote, page, rows: out.length }))
+        stats.theirstack_only = out.length
         jobs = out
       }
+
+      // Per-source counts on every real query: this is the data for the
+      // identical-query comparison once there is volume.
+      console.log('[jobs]', JSON.stringify({ ...stats, merged: jobs.length, titles, days, country, remote, page }))
 
       if (jobs.length === 0) {
         return {
