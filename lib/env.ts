@@ -11,10 +11,10 @@ export const GOOGLE_REDIRECT_URI = `${APP_URL}/api/auth/google/callback`
 export const PROVIDER_URL = (process.env.PROVIDER_URL ?? 'https://vaaya.ai').replace(/\/$/, '')
 export const PROVIDER_API_KEY = process.env.PROVIDER_API_KEY ?? ''
 
-// The job source. When set, jobs come from JSearch (OpenWeb Ninja on
-// RapidAPI) at a fraction of the per-job cost; unset, we fall back to the
-// old vendor so the app keeps working.
-export const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY ?? ''
+// The job source. When set, jobs come from JSearch (OpenWeb Ninja's direct
+// API) at a fraction of the per-job cost; unset, we fall back to the old
+// vendor so the app keeps working.
+export const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY ?? ''
 
 // Money. Balances are integer paise. Every new account starts with this.
 export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)

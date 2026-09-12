@@ -6,10 +6,13 @@
 // What we give up vs TheirStack: naukri.com listings, normalized salary
 // bands and a seniority label. Salary comes through when the publisher
 // states it; seniority we no longer use at all.
-import { RAPIDAPI_KEY } from './env'
+import { COUNTRIES } from './countries'
+import { JSEARCH_API_KEY } from './env'
 import type { Job } from './types'
 
-const HOST = 'jsearch.p.rapidapi.com'
+// OpenWeb Ninja's direct API (not the RapidAPI listing): different host and a
+// plain X-API-Key header.
+const ENDPOINT = 'https://api.openwebninja.com/jsearch/search'
 
 export interface JSearchQuery {
   titles: string[]
@@ -17,6 +20,8 @@ export interface JSearchQuery {
   remoteOnly: boolean
   days: number
   page: number
+  /** Override the date bucket; the cascade uses this to retry wider. */
+  bucket?: string
 }
 
 interface RawJob {
@@ -38,13 +43,26 @@ interface RawJob {
   job_salary_period?: string | null
 }
 
-/** JSearch's date_posted buckets. We ask for the smallest bucket that covers
- *  the user's window, then filter exactly by timestamp ourselves. */
-function bucket(days: number): string {
+// Buckets are all / today / 3days / week / month — no 14-day option, so we
+// always filter by job_posted_at_datetime_utc ourselves.
+//
+// Measured 2026-09-12 on India queries: `week` returns a far fresher, denser
+// slice than `month` (20 of 20 rows inside 14 days vs 8 of 20). So `week` is
+// the default for any window up to a fortnight, and `month` is a retry rather
+// than the first choice, even though it nominally covers more days.
+export function bucketFor(days: number): string {
   if (days <= 1) return 'today'
   if (days <= 3) return '3days'
-  if (days <= 7) return 'week'
+  if (days <= 14) return 'week'
   return 'month'
+}
+
+/** Naming the country inside the query text is what makes results both fresh
+ *  and geographically spread. Without it the API pins to one metro and serves
+ *  months-old rows (New Delhi only, 2 of 10 fresh). With it: 10 of 10. */
+function countryName(code: string | null): string | null {
+  if (!code) return null
+  return COUNTRIES.find((c) => c.code === code.toUpperCase())?.name ?? null
 }
 
 function money(j: RawJob): string | null {
@@ -87,22 +105,23 @@ function toJob(j: RawJob): Job | null {
   }
 }
 
-export const jsearchEnabled = () => !!RAPIDAPI_KEY
+export const jsearchEnabled = () => !!JSEARCH_API_KEY
 
 /** One page of matching jobs, newest-first, already filtered to the window. */
 export async function searchJobs(q: JSearchQuery): Promise<{ ok: true; jobs: Job[] } | { ok: false; code: string; message: string }> {
-  if (!RAPIDAPI_KEY) return { ok: false, code: 'not_configured', message: 'Job search is not configured.' }
-  const url = new URL(`https://${HOST}/search`)
-  url.searchParams.set('query', q.titles.slice(0, 3).join(' OR '))
+  if (!JSEARCH_API_KEY) return { ok: false, code: 'not_configured', message: 'Job search is not configured.' }
+  const name = countryName(q.countryCode)
+  const url = new URL(ENDPOINT)
+  url.searchParams.set('query', `${q.titles.slice(0, 3).join(' OR ')}${name ? ` in ${name}` : ''}`)
   url.searchParams.set('page', String(q.page + 1))
-  url.searchParams.set('num_pages', '1')
-  url.searchParams.set('date_posted', bucket(q.days))
+  url.searchParams.set('num_pages', '2')
+  url.searchParams.set('date_posted', q.bucket ?? bucketFor(q.days))
   if (q.countryCode) url.searchParams.set('country', q.countryCode.toLowerCase())
   if (q.remoteOnly) url.searchParams.set('remote_jobs_only', 'true')
 
   let res: Response
   try {
-    res = await fetch(url, { headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': HOST } })
+    res = await fetch(url, { headers: { 'x-api-key': JSEARCH_API_KEY } })
   } catch (err) {
     console.error('[jsearch] network', err)
     return { ok: false, code: 'upstream', message: 'That step did not go through. Nothing was charged. Try again in a minute.' }
@@ -117,9 +136,11 @@ export async function searchJobs(q: JSearchQuery): Promise<{ ok: true; jobs: Job
     .map(toJob)
     .filter((j): j is Job => !!j)
     .filter((j) => {
-      if (!j.posted) return true // undated: keep, the bucket already constrained it
+      // Undated rows are dropped: we promise a date window, so anything we
+      // cannot date does not belong in it.
+      if (!j.posted) return false
       const t = Date.parse(j.posted)
-      return Number.isNaN(t) || t >= cutoff
+      return !Number.isNaN(t) && t >= cutoff
     })
   // Newest first, and never hand back two rows for the same posting.
   const seen = new Set<string>()

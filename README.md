@@ -49,7 +49,7 @@ Environment variables (all on Vercel → Settings → Environment Variables):
 | --- | --- |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth web client with redirect URI `https://<host>/api/auth/google/callback` |
 | `PROVIDER_API_KEY` | The operator's data-backend key (contacts, drafting, and the jobs fallback) |
-| `RAPIDAPI_KEY` | RapidAPI key subscribed to JSearch. Set it and jobs switch to the cheap source. |
+| `JSEARCH_API_KEY` | OpenWeb Ninja direct API key (`ak_…`) for JSearch. Set it and jobs switch to the cheap source. |
 | `SESSION_SECRET` | 32+ random characters |
 | `APP_URL` | `https://<host>`, no trailing slash |
 | `BLOB_READ_WRITE_TOKEN` | From the connected Vercel Blob store |

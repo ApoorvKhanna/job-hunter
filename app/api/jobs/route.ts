@@ -1,4 +1,4 @@
-import { jsearchEnabled, searchJobs } from '@/lib/jsearch'
+import { bucketFor, jsearchEnabled, searchJobs } from '@/lib/jsearch'
 import { run } from '@/lib/provider'
 import { paidStep, readJson } from '@/lib/route'
 import { saveItems } from '@/lib/saved'
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 // ── legacy source (TheirStack, via the provider) ────────────────────────────
-// Kept as the fallback for deployments without a RAPIDAPI_KEY. It bills a flat
+// Kept as the top-up and as the fallback without a JSEARCH_API_KEY. It bills a flat
 // 40c per call regardless of rows, which is why it is no longer the default.
 interface RawJob {
   id: number
@@ -126,7 +126,18 @@ export async function POST(req: Request) {
         stats.jsearch = first.jobs.length
         jobs = first.jobs
 
-        // 2. Thin result? Top up from the deeper source, still inside the
+        // 2. Thin? Retry the cheap source on the wider bucket first. `week`
+        //    is denser but nominally misses days 8-14, so this catches those
+        //    before we spend anything.
+        if (jobs.length < THIN && bucketFor(days) !== 'month') {
+          const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page, bucket: 'month' })
+          if (wider.ok && wider.jobs.length > 0) {
+            stats.jsearch_month = wider.jobs.length
+            jobs = mergeJobs(jobs, wider.jobs).slice(0, THIN)
+          }
+        }
+
+        // 3. Still thin? Top up from the deeper source, still inside the
         //    user's window so everything we show stays fresh. This is the
         //    only path that costs real money, and only on a miss.
         if (jobs.length < THIN) {
@@ -142,7 +153,7 @@ export async function POST(req: Request) {
           }
         }
 
-        // 3. Nothing at all? Widen the cheap source before giving up.
+        // 4. Nothing at all? Widen the cheap source before giving up.
         if (jobs.length === 0) {
           for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
             if (t.days === days && t.country === country) continue
