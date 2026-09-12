@@ -57,6 +57,7 @@ Environment variables (all on Vercel → Settings → Environment Variables):
 | `ADMIN_TOKEN` | Guards `/admin` and the recharge approval API |
 | `START_CREDIT_INR` | Optional, default 49 |
 | `VAAYA_CUSTOMERS_ENABLED` | `true` to give every login its own wallet on the backend (see below). Off by default. |
+| `VAAYA_OWNER_KEY` | The account's primary, unrestricted key. Only used to create, fund and mint tokens for customers; the backend refuses capped keys there. |
 | `CUSTOMER_BUDGET_CENTS`, `CUSTOMER_WELCOME_CENTS` | Per-user spend ceiling and first funding, in US cents. Defaults 500 and 49. |
 
 ### Per-user wallets

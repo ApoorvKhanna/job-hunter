@@ -10,6 +10,10 @@ export const GOOGLE_REDIRECT_URI = `${APP_URL}/api/auth/google/callback`
 // The data backend. One operator key; users never see it.
 export const PROVIDER_URL = (process.env.PROVIDER_URL ?? 'https://vaaya.ai').replace(/\/$/, '')
 export const PROVIDER_API_KEY = process.env.PROVIDER_API_KEY ?? ''
+// Managing customers (create, fund, mint access) needs the account's primary,
+// unrestricted key; a capped sub-key is refused with 403. Kept separate so the
+// everyday operator key can stay capped. Falls back to PROVIDER_API_KEY.
+export const OWNER_API_KEY = process.env.VAAYA_OWNER_KEY || PROVIDER_API_KEY
 
 // The job source. When set, jobs come from JSearch (OpenWeb Ninja's direct
 // API) at a fraction of the per-job cost; unset, we fall back to the old

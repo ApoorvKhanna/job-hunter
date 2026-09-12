@@ -7,7 +7,7 @@
 //
 // What it cannot do yet (backend fails closed, 422): the LLM router and the
 // routed people-finder. Those stay on the operator key; see provider.ts.
-import { CUSTOMER_BUDGET_CENTS, CUSTOMERS_ENABLED, PROVIDER_API_KEY, PROVIDER_URL } from './env'
+import { CUSTOMER_BUDGET_CENTS, CUSTOMERS_ENABLED, OWNER_API_KEY, PROVIDER_URL } from './env'
 
 export interface Customer {
   id: string
@@ -40,7 +40,7 @@ async function owner(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unkn
   const res = await fetch(`${PROVIDER_URL}${path}`, {
     method,
     headers: {
-      authorization: `Bearer ${PROVIDER_API_KEY}`,
+      authorization: `Bearer ${OWNER_API_KEY}`,
       'content-type': 'application/json',
       'x-vaaya-agent': 'job-hunter',
       ...headers,
@@ -54,7 +54,7 @@ async function owner(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unkn
   return json
 }
 
-export const customersEnabled = () => CUSTOMERS_ENABLED && !!PROVIDER_API_KEY
+export const customersEnabled = () => CUSTOMERS_ENABLED && !!OWNER_API_KEY
 
 /** Create or fetch the customer for this external id. Idempotent on the server. */
 export async function ensureCustomer(externalId: string): Promise<Customer> {
