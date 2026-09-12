@@ -16,6 +16,16 @@ export const PROVIDER_API_KEY = process.env.PROVIDER_API_KEY ?? ''
 // vendor so the app keeps working.
 export const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY ?? ''
 
+// Managed customers: one Vaaya identity + x402 wallet per signed-in user, so
+// spend is attributed per person instead of pooled on the operator key. Off
+// by default: the backend returns 503 customers_not_enabled until its owner
+// rolls the feature out, and every path here degrades to the operator key.
+export const CUSTOMERS_ENABLED = process.env.VAAYA_CUSTOMERS_ENABLED === 'true'
+// Lifetime cap on what one customer wallet may ever be funded with, in cents.
+export const CUSTOMER_BUDGET_CENTS = Math.round(Number(process.env.CUSTOMER_BUDGET_CENTS ?? 500))
+// First funding, in cents. Mirrors the ₹49 welcome at the app's ₹1 ≈ 1¢ mapping.
+export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 49))
+
 // Money. Balances are integer paise. Every new account starts with this.
 export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)
 export const UPI_ID = process.env.UPI_ID ?? ''

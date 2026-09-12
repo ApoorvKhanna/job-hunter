@@ -6,6 +6,16 @@ import { START_CREDIT_PAISE } from './env'
 
 export interface Entry { at: string; kind: 'credit' | 'debit'; paise: number; note: string }
 export interface Pending { id: string; at: string; paise: number; utr: string; status: 'pending' | 'approved' | 'rejected' }
+export interface CustomerRef {
+  id: string
+  status: 'provisioning' | 'ready' | 'failed'
+  address: string | null
+  /** Cents we have asked Vaaya to move into this wallet, confirmed or not. */
+  fundedCents: number
+  /** Funding operation ids we have submitted, so retries reuse them. */
+  fundingOps: string[]
+  updatedAt: string
+}
 export interface Account {
   sub: string
   email: string
@@ -14,6 +24,8 @@ export interface Account {
   balancePaise: number
   entries: Entry[]
   pending: Pending[]
+  /** The user's own Vaaya identity + x402 wallet, when managed customers are on. */
+  customer?: CustomerRef
 }
 
 const path = (sub: string) => `users/${sub}.json`
@@ -121,6 +133,13 @@ export async function addPending(sub: string, paise: number, utr: string): Promi
   return mutate(sub, (a) => {
     a.pending.unshift({ id: crypto.randomUUID(), at: new Date().toISOString(), paise, utr, status: 'pending' })
     a.pending = a.pending.slice(0, 50)
+  })
+}
+
+/** Record (or refresh) the user's Vaaya customer on their account. */
+export async function setCustomer(sub: string, customer: CustomerRef): Promise<Account> {
+  return mutate(sub, (a) => {
+    a.customer = customer
   })
 }
 

@@ -1,4 +1,4 @@
-import { run } from '@/lib/provider'
+import { runFor } from '@/lib/provider'
 import { paidStep, readJson } from '@/lib/route'
 import { saveItems } from '@/lib/saved'
 
@@ -17,8 +17,9 @@ export async function POST(req: Request) {
   }
   return paidStep<{ work: string[]; personal: string[] }>(
     'email',
-    async () => {
-      const out = await run<{ profile?: { email?: string[]; work_email?: string[]; personal_email?: string[] } }>(
+    async (account) => {
+      const out = await runFor<{ profile?: { email?: string[]; work_email?: string[]; personal_email?: string[] } }>(
+        account,
         'contactout',
         'linkedin-contacts',
         { profile: linkedin_url, include_phone: false },

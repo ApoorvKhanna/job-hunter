@@ -3,7 +3,8 @@
 //   1. routed people-finder (2¢): "managers, founders, recruiters at X" → up to 15 rows
 //   2. ContactOut people search, broad leadership titles (3¢)
 //   3. nothing → no_people, no charge
-import { run } from '@/lib/provider'
+import { run, runFor } from '@/lib/provider'
+import type { Account } from '@/lib/ledger'
 import { paidStep, readJson } from '@/lib/route'
 import type { Person } from '@/lib/types'
 
@@ -66,10 +67,11 @@ async function rungFind(company: string, domain: string | null, jobTitle: string
     }))
 }
 
-async function rungContactOut(company: string, jobTitle: string): Promise<Person[]> {
+async function rungContactOut(account: Account, company: string, jobTitle: string): Promise<Person[]> {
   const fn = functionWord(jobTitle)
   const titles = `Founder OR CEO OR CTO OR Co-Founder OR Head OR Director OR VP OR Manager OR Recruiter OR Talent OR HR OR ${fn}`
-  const out = await run<{ profiles?: Record<string, Record<string, unknown>> }>(
+  const out = await runFor<{ profiles?: Record<string, Record<string, unknown>> }>(
+    account,
     'contactout',
     'people-search',
     { job_title: [titles], company: [company], current_titles_only: true, company_filter: 'current', page_size: 5 },
@@ -96,7 +98,7 @@ export async function POST(req: Request) {
   const { company, company_domain, job_title } = await readJson<{ company?: string; company_domain?: string | null; job_title?: string }>(req)
   if (!company) return Response.json({ ok: false, code: 'invalid', message: 'Company is required.' })
   const title = job_title ?? ''
-  return paidStep<Person[]>('contact', async () => {
+  return paidStep<Person[]>('contact', async (account) => {
     const seen = new Set<string>()
     const people: Person[] = []
     const add = (rows: Person[]) => {
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
     const t0 = Date.now()
     add(await rungFind(company, company_domain ?? null, title))
     const t1 = Date.now()
-    if (people.length < 2) add(await rungContactOut(company, title))
+    if (people.length < 2) add(await rungContactOut(account, company, title))
     console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: people.length < 2 ? Date.now() - t1 : 0, people: people.length }))
     if (people.length === 0) {
       console.log('[contact] no people', company, company_domain)

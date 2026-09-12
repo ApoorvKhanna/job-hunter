@@ -1,5 +1,6 @@
 import { bucketFor, jsearchEnabled, searchJobs } from '@/lib/jsearch'
-import { run } from '@/lib/provider'
+import { runFor } from '@/lib/provider'
+import type { Account } from '@/lib/ledger'
 import { paidStep, readJson } from '@/lib/route'
 import { saveItems } from '@/lib/saved'
 import type { Job } from '@/lib/types'
@@ -52,6 +53,7 @@ function teamOf(raw: RawJob['hiring_team']): Job['hiring_team'] {
 /** One TheirStack page. Flat fee per call regardless of rows, so always ask
  *  for the full 10 — a top-up of 3 rows costs exactly what 10 rows cost. */
 async function legacySearch(
+  account: Account,
   titles: string[],
   days: number,
   country: string | null,
@@ -66,7 +68,7 @@ async function legacySearch(
     ...(country ? { job_country_code_or: [country] } : {}),
     ...(remote ? { remote: true } : {}),
   }
-  const out = await run<{ data?: RawJob[] }>('theirstack', 'jobs', params, 40)
+  const out = await runFor<{ data?: RawJob[] }>(account, 'theirstack', 'jobs', params, 40)
   if (!out.ok) return { error: out.code, message: out.message }
   return (out.data.data ?? []).map((j) => ({
     id: String(j.id),
@@ -115,7 +117,7 @@ export async function POST(req: Request) {
 
   return paidStep<Job[]>(
     'jobs',
-    async () => {
+    async (account) => {
       const stats: Record<string, number> = {}
       let jobs: Job[] = []
 
@@ -141,7 +143,7 @@ export async function POST(req: Request) {
         //    user's window so everything we show stays fresh. This is the
         //    only path that costs real money, and only on a miss.
         if (jobs.length < THIN) {
-          const topUp = await legacySearch(titles, days, country, remote, page)
+          const topUp = await legacySearch(account, titles, days, country, remote, page)
           if (Array.isArray(topUp)) {
             stats.theirstack = topUp.length
             jobs = mergeJobs(jobs, topUp).slice(0, THIN)
@@ -167,7 +169,7 @@ export async function POST(req: Request) {
           }
         }
       } else {
-        const out = await legacySearch(titles, days, country, remote, page)
+        const out = await legacySearch(account, titles, days, country, remote, page)
         if (!Array.isArray(out)) return { ok: false, code: out.error, message: out.message }
         stats.theirstack_only = out.length
         jobs = out

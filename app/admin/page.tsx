@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { inr } from '@/lib/prices'
 
-interface Row { sub: string; email: string; name: string; balance_paise: number; pending: Array<{ id: string; at: string; paise: number; utr: string }> }
+interface Row { sub: string; email: string; name: string; balance_paise: number; wallet: string | null; pending: Array<{ id: string; at: string; paise: number; utr: string }> }
 
 export default function Admin() {
   const [token, setToken] = useState('')
@@ -48,7 +48,7 @@ export default function Admin() {
             <div className="row between">
               <div>
                 <div><b>{inr(p.paise)}</b> from {r.name} <span className="muted small">{r.email}</span></div>
-                <div className="meta">UTR <span className="email">{p.utr}</span> · {new Date(p.at).toLocaleString('en-IN')} · balance now {inr(r.balance_paise)}</div>
+                <div className="meta">UTR <span className="email">{p.utr}</span> · {new Date(p.at).toLocaleString('en-IN')} · balance now {inr(r.balance_paise)}{r.wallet ? <> · wallet <span className="email">{r.wallet.slice(0, 14)}…</span></> : null}</div>
               </div>
               <div className="row">
                 <button className="btn sm" onClick={() => settle(r.sub, p.id, 'approved')}>approve</button>

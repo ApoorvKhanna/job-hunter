@@ -56,6 +56,23 @@ Environment variables (all on Vercel → Settings → Environment Variables):
 | `UPI_ID`, `UPI_NAME` | Where recharges go, e.g. `name@upi` |
 | `ADMIN_TOKEN` | Guards `/admin` and the recharge approval API |
 | `START_CREDIT_INR` | Optional, default 49 |
+| `VAAYA_CUSTOMERS_ENABLED` | `true` to give every login its own wallet on the backend (see below). Off by default. |
+| `CUSTOMER_BUDGET_CENTS`, `CUSTOMER_WELCOME_CENTS` | Per-user spend ceiling and first funding, in US cents. Defaults 500 and 49. |
+
+### Per-user wallets
+
+With `VAAYA_CUSTOMERS_ENABLED=true`, every Google sign-in also ensures a managed
+customer on the backend, keyed by the Google subject. The customer id, wallet
+address and funding history live on the user's ledger blob. The first paid
+contact or jobs-fallback call moves the welcome amount into that wallet, and an
+approved UPI recharge mirrors into it at ₹1 ≈ 1¢. Contact search, email reveal
+and the TheirStack top-up then settle from the user's own wallet with a fresh
+`Idempotency-Key` per attempt. Resume parsing, drafting and the first contact
+rung stay on the operator key because the backend cannot settle those per
+customer. Any customer-side failure (feature off upstream, wallet still
+provisioning, unfunded, paused, over budget, expired token) falls back to the
+operator key for that call and is logged as `[customer] fell back`. A user is
+never blocked by wallet plumbing.
 
 ```bash
 pnpm install
