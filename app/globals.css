@@ -120,3 +120,13 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
 ul.plain li { padding-left: 18px; position: relative; }
 ul.plain li::before { content: ''; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); opacity: 0.35; }
+
+/* returning-user recap on the first screen */
+.recap { display: block; text-decoration: none; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 14px; margin-bottom: 18px; transition: border-color 0.15s; }
+.recap:hover { border-color: var(--ink); }
+.recap-nums { display: block; font-size: 14px; color: var(--ink); }
+.recap-nums b { font-weight: 600; }
+.recap-nums i { font-style: normal; color: var(--muted); margin: 0 8px; }
+.recap-last { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; }
+.recap-go { display: block; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.recap:hover .recap-go { color: var(--ink); }

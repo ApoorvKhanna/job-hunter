@@ -25,7 +25,26 @@ async function post<T>(path: string, body: unknown): Promise<Api<T>> {
   }
 }
 
-export default function Flow({ name, email, balancePaise, upi }: { name: string; email: string; balancePaise: number; upi: { id: string; name: string } }) {
+export interface SavedSummary {
+  jobs: number
+  contacts: number
+  emails: number
+  recent: Array<{ subject: string; company: string; person: string | null }>
+}
+
+export default function Flow({
+  name,
+  email,
+  balancePaise,
+  upi,
+  saved,
+}: {
+  name: string
+  email: string
+  balancePaise: number
+  upi: { id: string; name: string }
+  saved: SavedSummary
+}) {
   const [step, setStep] = useState<StepIndex>(0)
   const [balance, setBalance] = useState(balancePaise)
   const [busy, setBusy] = useState<string | null>(null)
@@ -158,6 +177,25 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
 
       {error ? <div className="notice err">{error}</div> : null}
       {recharge ? <Recharge need={recharge.need} balance={balance} upi={upi} onClose={() => setRecharge(null)} /> : null}
+
+      {step === 0 && saved.jobs + saved.contacts + saved.emails > 0 ? (
+        <a className="recap" href="/saved">
+          <span className="recap-nums">
+            <b>{saved.emails}</b> {saved.emails === 1 ? 'email' : 'emails'} written
+            <i>·</i>
+            <b>{saved.contacts}</b> {saved.contacts === 1 ? 'contact' : 'contacts'}
+            <i>·</i>
+            <b>{saved.jobs}</b> {saved.jobs === 1 ? 'job' : 'jobs'} saved
+          </span>
+          {saved.recent.length > 0 ? (
+            <span className="recap-last">
+              Last: {saved.recent[0].subject || 'an email'}
+              {saved.recent[0].person ? ` to ${saved.recent[0].person.split(' ')[0]}` : ''} at {saved.recent[0].company}
+            </span>
+          ) : null}
+          <span className="recap-go">Open your saved work →</span>
+        </a>
+      ) : null}
 
       {step === 0 ? (
         <ResumeStep resume={resume} setResume={setResume} busy={busy} onNext={readResume} setError={setError} />
