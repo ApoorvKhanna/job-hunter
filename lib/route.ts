@@ -38,6 +38,8 @@ function json(body: ApiOk<unknown> | ApiErr, status = 200) {
 export async function paidStep<T>(
   step: Step,
   fn: (account: Account) => Promise<ProviderResult<T> | { ok: false; code: string; message: string }>,
+  /** Runs after a successful charge. Its failure never fails the step. */
+  after?: (data: T, sub: string) => Promise<void>,
 ): Promise<NextResponse> {
   const session = await readSession()
   if (!session) return json({ ok: false, code: 'signed_out', message: 'Please sign in again.' }, 401)
@@ -55,8 +57,9 @@ export async function paidStep<T>(
   }
   if (!result.ok) return json({ ...result, balance_paise: account.balancePaise })
   try {
-    const after = await debit(session.sub, price, step)
-    return json({ ok: true, data: result.data, balance_paise: after.balancePaise, charged_paise: price })
+    const charged = await debit(session.sub, price, step)
+    if (after) await after(result.data, session.sub).catch((e) => console.error('[after]', step, e))
+    return json({ ok: true, data: result.data, balance_paise: charged.balancePaise, charged_paise: price })
   } catch (err) {
     if (err instanceof InsufficientBalance) {
       return json({ ok: false, code: 'recharge', message: 'Your balance is too low for this step.', balance_paise: err.balancePaise, need_paise: price })

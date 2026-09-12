@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
 import { PRICE_PAISE, RECHARGE_OPTIONS_INR, inr } from '@/lib/prices'
 import type { Job, Person, Profile } from '@/lib/types'
+import { VARIANT_LABELS, type Variant } from '@/lib/variants'
 
 type Api<T> = { ok: true; data: T; balance_paise: number; charged_paise?: number } | { ok: false; code: string; message: string; balance_paise?: number; need_paise?: number }
 
@@ -108,15 +109,20 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
   }
   async function reveal(p: Person) {
     setBusy(`email:${p.linkedin_url}`)
-    const data = settle(await post<{ work: string[]; personal: string[] }>('/api/email', { linkedin_url: p.linkedin_url }))
+    const data = settle(await post<{ work: string[]; personal: string[] }>('/api/email', { linkedin_url: p.linkedin_url, name: p.name, title: p.title, company: job?.company }))
     setBusy(null)
     if (data) setEmails((m) => ({ ...m, [p.linkedin_url]: data }))
   }
   // Step 3 → 4
+  const toOf = (p: Person | null) => {
+    const e = p ? emails[p.linkedin_url] : undefined
+    return e ? ([...e.work, ...e.personal][0] ?? null) : null
+  }
+
   async function draft(p: Person | null) {
     if (!job) return
     setBusy(p ? `draft:${p.linkedin_url}` : 'draft')
-    const data = settle(await post<string>('/api/draft', { resume, job: { title: job.title, company: job.company, description: job.description, url: job.url }, person: p ? { name: p.name, title: p.title } : undefined }))
+    const data = settle(await post<string>('/api/draft', { resume, job: { title: job.title, company: job.company, description: job.description, url: job.url }, person: p ? { name: p.name, title: p.title } : undefined, to: toOf(p) }))
     setBusy(null)
     if (data) {
       setNote(data)
@@ -125,13 +131,25 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
     }
   }
 
+  async function rewrite(variant: Variant) {
+    if (!job || !note) return
+    setBusy(`v:${variant}`)
+    const data = settle(await post<string>('/api/draft', { resume, job: { title: job.title, company: job.company, description: job.description, url: job.url }, person: person ? { name: person.name, title: person.title } : undefined, to: toOf(person), variant, previous: note }))
+    setBusy(null)
+    if (data) setNote(data)
+  }
+
   return (
     <main className="wrap">
       <nav className="nav">
         <a className="brand" href="/">Job Hunter</a>
         <div className="nav-right">
-          <span className="small" title={email}>{name.split(' ')[0]}</span>
-          <button className="pill" onClick={() => setRecharge({ need: 0 })} title="Balance. Click to recharge.">{inr(balance)}</button>
+          <span className="navlink on">Search</span>
+          <a className="navlink" href="/saved">Saved</a>
+          <span className={`balance${balance < 2000 ? ' low' : ''}`}>
+            <span className="amt" title={`Balance for ${email}`}>{inr(balance)}</span>
+            <button className="go" onClick={() => setRecharge({ need: 0 })}>Recharge</button>
+          </span>
           <form action="/api/auth/logout" method="post"><button className="btn ghost sm" type="submit">sign out</button></form>
         </div>
       </nav>
@@ -237,7 +255,7 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
                   <div className="row" style={{ flexShrink: 0 }}>
                     {!e ? (
                       <button className="btn ghost sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
-                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Email <span className="price">{inr(PRICE_PAISE.email)}</span>
+                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Reveal email <span className="price">{inr(PRICE_PAISE.email)}</span>
                       </button>
                     ) : null}
                     <button className="btn sm" onClick={() => draft(p)} disabled={busy !== null}>
@@ -257,17 +275,26 @@ export default function Flow({ name, email, balancePaise, upi }: { name: string;
 
       {step === 4 && job && note ? (
         <section>
-          <h2>Your note{person ? ` to ${person.name.split(' ')[0]}` : ''}</h2>
+          <h2>Your email{person ? ` to ${person.name.split(' ')[0]}` : ''}</h2>
           <p className="small muted">{job.title} at {job.company}{person && emails[person.linkedin_url] ? ` · send to ${[...emails[person.linkedin_url].work, ...emails[person.linkedin_url].personal][0]}` : ''}</p>
           <pre className="note">{note}</pre>
           <div className="row">
-            <button className="btn" onClick={() => navigator.clipboard.writeText(note)}>Copy note</button>
+            <button className="btn" onClick={() => navigator.clipboard.writeText(note)}>Copy email</button>
             {person && emails[person.linkedin_url]?.work[0] ? (
               <a className="btn ghost" href={`mailto:${emails[person.linkedin_url].work[0]}?subject=${encodeURIComponent(note.split('\n')[0].replace(/^Subject:\s*/i, ''))}&body=${encodeURIComponent(note.split('\n').slice(2).join('\n'))}`}>Open in mail</a>
             ) : null}
             <button className="btn ghost sm" onClick={() => setStep(3)}>another person</button>
             <button className="btn ghost sm" onClick={() => setStep(2)}>another job</button>
           </div>
+          <div className="variants">
+            <span className="small muted">Try another tone:</span>
+            {VARIANT_LABELS.map((v) => (
+              <button key={v.id} className="btn ghost sm" onClick={() => rewrite(v.id)} disabled={busy !== null}>
+                {busy === `v:${v.id}` ? <span className="spin" /> : null} {v.label} <span className="price">{inr(PRICE_PAISE.draft)}</span>
+              </button>
+            ))}
+          </div>
+          <p className="small muted">Saved to <a href="/saved">your list</a> automatically.</p>
         </section>
       ) : null}
 

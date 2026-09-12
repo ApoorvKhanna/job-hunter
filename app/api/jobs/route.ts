@@ -1,5 +1,6 @@
 import { run } from '@/lib/provider'
 import { paidStep, readJson } from '@/lib/route'
+import { saveItems } from '@/lib/saved'
 import type { Job } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -67,7 +68,9 @@ export async function POST(req: Request) {
   if (JSON.stringify(widened) !== JSON.stringify(tiers[0])) tiers.push(widened)
   if (country) tiers.push({ ...base, posted_at_max_age_days: Math.max(days, 30) })
 
-  return paidStep<Job[]>('jobs', async () => {
+  return paidStep<Job[]>(
+    'jobs',
+    async () => {
     for (let i = 0; i < tiers.length; i++) {
       const out = await run<{ data?: RawJob[] }>('theirstack', 'jobs', tiers[i], 40)
       if (!out.ok) return out
@@ -91,12 +94,29 @@ export async function POST(req: Request) {
       }))
       return { ok: true, data: jobs }
     }
-    return {
+      return {
       ok: false,
       code: 'no_jobs',
       message: page > 0
         ? 'That is everything we could find for these titles. Nothing was charged.'
         : 'No postings matched those titles, even after widening the search. Nothing was charged. Try simpler titles, like "Product Manager" instead of a long one.',
-    }
-  })
+      }
+    },
+    async (jobs, sub) =>
+      saveItems(
+        sub,
+        jobs.map((j) => ({
+          kind: 'job' as const,
+          at: new Date().toISOString(),
+          id: j.id,
+          title: j.title,
+          company: j.company,
+          location: j.location,
+          remote: j.remote,
+          salary: j.salary,
+          posted: j.posted,
+          url: j.url,
+        })),
+      ),
+  )
 }

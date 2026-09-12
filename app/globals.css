@@ -99,3 +99,20 @@ pre.note { white-space: pre-wrap; font: 14px/1.5 inherit; background: var(--bg);
 button.chip { cursor: pointer; font: inherit; color: inherit; }
 button.pill { cursor: pointer; color: inherit; }
 select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+
+/* nav links + tabs + prominent recharge */
+.navlink { text-decoration: none; color: var(--muted); font-size: 13px; }
+.navlink:hover { color: var(--ink); }
+.navlink.on { color: var(--ink); font-weight: 500; }
+.btn.recharge { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+.btn.recharge:hover { filter: brightness(1.06); }
+.balance { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.balance .amt { font-family: var(--mono); font-size: 13px; padding: 6px 10px; }
+.balance .go { border: 0; border-left: 1px solid var(--line); background: var(--ok); color: #fff; font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; cursor: pointer; }
+.balance .go:hover { filter: brightness(1.06); }
+.balance.low .amt { color: var(--err); font-weight: 600; }
+.tabs { display: flex; gap: 6px; margin: 18px 0 14px; flex-wrap: wrap; }
+.tab { border: 1px solid var(--line); background: var(--surface); color: var(--muted); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+.tab.on { border-color: var(--ink); color: var(--ink); font-weight: 500; }
+.tab .count { font-family: var(--mono); font-size: 11px; opacity: 0.6; }
+.variants { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
