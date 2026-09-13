@@ -298,6 +298,7 @@ export default function Flow({
                     {e ? <div className="email">{[...e.work, ...e.personal].join(' · ')}</div> : null}
                   </div>
                   <div className="row" style={{ flexShrink: 0 }}>
+                    {p.linkedin_url ? <a className="btn ghost sm" href={p.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
                     {!e ? (
                       <button className="btn ghost sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
                         {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Find email <span className="price">· {inr(PRICE_PAISE.email)}</span>
@@ -321,7 +322,7 @@ export default function Flow({
       {step === 4 && job && note ? (
         <section>
           <h2>Your email draft{person ? ` for ${person.name.split(' ')[0]}` : ''}</h2>
-          <p className="small muted">About: {job.title} at {job.company}{person && emails[person.linkedin_url] ? <> · To: <span className="email">{[...emails[person.linkedin_url].work, ...emails[person.linkedin_url].personal][0]}</span></> : null}</p>
+          <p className="small muted">About: {job.title} at {job.company}{person && emails[person.linkedin_url] ? <> · To: <span className="email">{[...emails[person.linkedin_url].work, ...emails[person.linkedin_url].personal][0]}</span></> : null}{person?.linkedin_url ? <> · <a href={person.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a></> : null}</p>
           <p className="small muted">Review the details and personalise the draft before sending.</p>
           <pre className="note">{note}</pre>
           <div className="row">

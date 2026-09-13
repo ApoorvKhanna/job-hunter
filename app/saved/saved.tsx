@@ -83,6 +83,7 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
                   </div>
                   <div className="row" style={{ flexShrink: 0 }}>
                     <span className="meta">Saved {when(e.at)}</span>
+                    {e.linkedin_url ? <a className="btn ghost sm" href={e.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
                     {e.emails[0] ? <CopyBtn text={e.emails.join(', ')} label={e.emails.length > 1 ? 'Copy email addresses' : 'Copy email address'} /> : null}
                   </div>
                 </div>
