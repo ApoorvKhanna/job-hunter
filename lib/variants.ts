@@ -7,7 +7,7 @@ export const VARIANTS = {
 export type Variant = keyof typeof VARIANTS
 
 export const VARIANT_LABELS: Array<{ id: Variant; label: string }> = [
-  { id: 'friendly', label: 'Friendlier' },
-  { id: 'short', label: 'Shorter' },
-  { id: 'formal', label: 'More formal' },
+  { id: 'friendly', label: 'Make it friendlier' },
+  { id: 'short', label: 'Make it shorter' },
+  { id: 'formal', label: 'Make it more formal' },
 ]

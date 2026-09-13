@@ -4,13 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Header from '../header'
 import Recharge from '../recharge'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
+import { plural, postedOn } from '@/lib/format'
 import { PRICE_PAISE, inr } from '@/lib/prices'
 import type { Job, Person, Profile } from '@/lib/types'
 import { VARIANT_LABELS, type Variant } from '@/lib/variants'
 
 type Api<T> = { ok: true; data: T; balance_paise: number; charged_paise?: number } | { ok: false; code: string; message: string; balance_paise?: number; need_paise?: number }
 
-const STEPS = ['Resume', 'Profile', 'Jobs', 'People', 'Note'] as const
+const STEPS = ['Resume', 'Profile', 'Jobs', 'Contacts', 'Email'] as const
 type StepIndex = 0 | 1 | 2 | 3 | 4
 
 async function post<T>(path: string, body: unknown): Promise<Api<T>> {
@@ -159,11 +160,25 @@ export default function Flow({
     if (data) setNote(data)
   }
 
+  const loading = (() => {
+    if (!busy) return null
+    if (busy === 'parse') return 'Analysing your resume…'
+    if (busy === 'jobs') return 'Finding jobs that match your search…'
+    if (busy === 'more') return 'Finding more jobs…'
+    if (busy === 'people') return `Finding contacts at ${job?.company ?? 'the company'}…`
+    if (busy.startsWith('email:')) {
+      const p = people?.find((x) => `email:${x.linkedin_url}` === busy)
+      return p ? `Looking for ${p.name.split(' ')[0]}’s email…` : 'Looking for an email…'
+    }
+    return 'Drafting your email…'
+  })()
+
   return (
     <main className="wrap">
       <Header active="search" email={email} balance={balance} onRecharge={() => setRecharge({ need: 0 })} />
 
-      <StatusBar step={step} onJump={(i) => i < step && setStep(i)} busy={busy} />
+      <StatusBar step={step} onJump={(i) => i < step && setStep(i)} />
+      {loading ? <p className="loading" role="status"><span className="spin" /> {loading}</p> : null}
 
       {error ? <div className="notice err">{error}</div> : null}
       {recharge ? <Recharge need={recharge.need} balance={balance} upi={upi} onClose={() => setRecharge(null)} /> : null}
@@ -171,19 +186,19 @@ export default function Flow({
       {step === 0 && saved.jobs + saved.contacts + saved.emails > 0 ? (
         <a className="recap" href="/saved">
           <span className="recap-nums">
-            <b>{saved.emails}</b> {saved.emails === 1 ? 'email' : 'emails'} written
+            <b>{saved.emails}</b> email {saved.emails === 1 ? 'draft' : 'drafts'}
             <i>·</i>
             <b>{saved.contacts}</b> {saved.contacts === 1 ? 'contact' : 'contacts'}
             <i>·</i>
-            <b>{saved.jobs}</b> {saved.jobs === 1 ? 'job' : 'jobs'} saved
+            <b>{saved.jobs}</b> saved {saved.jobs === 1 ? 'job' : 'jobs'}
           </span>
           {saved.recent.length > 0 ? (
             <span className="recap-last">
-              Last: {saved.recent[0].subject || 'an email'}
+              Latest draft: {saved.recent[0].subject || 'an email'}
               {saved.recent[0].person ? ` to ${saved.recent[0].person.split(' ')[0]}` : ''} at {saved.recent[0].company}
             </span>
           ) : null}
-          <span className="recap-go">Open your saved work →</span>
+          <span className="recap-go">View saved results →</span>
         </a>
       ) : null}
 
@@ -193,14 +208,15 @@ export default function Flow({
 
       {step === 1 && profile ? (
         <section>
-          <h2>Check what we will search for</h2>
+          <h2>Review your search</h2>
+          <p className="small muted">We suggested these job titles from your resume. Edit or remove them, then choose where to search.</p>
           <div className="card">
-            <p className="small muted" style={{ marginBottom: 8 }}>{profile.headline}{profile.years ? ` · ${profile.years} years` : ''}</p>
+            <p className="small muted" style={{ marginBottom: 8 }}>{profile.headline}{profile.years ? ` · ${profile.years} years of experience` : ''}</p>
             <div className="chips" style={{ marginBottom: 12 }}>
               {profile.titles.map((t, i) => (
                 <span className="chip" key={i}>
                   <input value={t} onChange={(e) => setProfile({ ...profile, titles: profile.titles.map((x, j) => (j === i ? e.target.value : x)) })} aria-label="job title" />
-                  <button onClick={() => setProfile({ ...profile, titles: profile.titles.filter((_, j) => j !== i) })} aria-label="remove">×</button>
+                  <button onClick={() => setProfile({ ...profile, titles: profile.titles.filter((_, j) => j !== i) })} aria-label="Remove title" title="Remove title">×</button>
                 </span>
               ))}
               {profile.titles.length < 5 ? <button className="btn ghost sm" onClick={() => setProfile({ ...profile, titles: [...profile.titles, ''] })}>+ title</button> : null}
@@ -209,46 +225,47 @@ export default function Flow({
               <label className="row" style={{ gap: 6 }}>
                 Country
                 <select value={COUNTRIES.some((c) => c.code === profile.country_code) ? profile.country_code : ''} onChange={(e) => setProfile({ ...profile, country_code: e.target.value })}>
-                  <option value="">🌍 Anywhere</option>
+                  <option value="">🌍 Any country</option>
                   {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
                 </select>
               </label>
               <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={profile.remote === true} onChange={(e) => setProfile({ ...profile, remote: e.target.checked ? true : null })} /> Remote only
+                <input type="checkbox" checked={profile.remote === true} onChange={(e) => setProfile({ ...profile, remote: e.target.checked ? true : null })} /> Remote roles only
               </label>
               <label className="row" style={{ gap: 6 }}>
-                Posted in last
+                Date posted
                 <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-                  {[7, 14, 30].map((d) => <option key={d} value={d}>{d} days</option>)}
+                  {[7, 14, 30].map((d) => <option key={d} value={d}>Last {d} days</option>)}
                 </select>
               </label>
             </div>
           </div>
           <div className="row">
             <button className="btn" onClick={() => findJobs(0)} disabled={busy !== null || profile.titles.filter((t) => t.trim()).length === 0}>
-              {busy === 'jobs' ? <span className="spin" /> : null} Find my jobs <span className="price">{inr(PRICE_PAISE.jobs)}</span>
+              {busy === 'jobs' ? <span className="spin" /> : null} Find matching jobs <span className="price">· {inr(PRICE_PAISE.jobs)}</span>
             </button>
-            <button className="btn ghost" onClick={() => setStep(0)}>back</button>
+            <button className="btn ghost" onClick={() => setStep(0)}>Back to resume</button>
           </div>
         </section>
       ) : null}
 
       {step === 2 && jobs ? (
         <section>
-          <h2>{jobs.length ? `${jobs.length} postings. Pick one.` : 'Nothing matched'}</h2>
+          <h2>{jobs.length ? `${plural(jobs.length, 'job')} found` : 'No jobs found'}</h2>
+          {jobs.length ? <p className="small muted">Open a job title to read the posting, or find contacts at the company.</p> : null}
           {jobs.length === 0 ? (
-            <p className="muted">No postings for those titles in the window. <button className="btn ghost sm" onClick={() => setStep(1)}>Change titles or dates</button></p>
+            <p className="muted">No jobs matched those titles in that date range. <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button></p>
           ) : null}
           {jobs.map((j) => (
             <div className="card" key={j.id}>
               <div className="row between">
                 <div>
                   <div className="job-title"><a href={j.url} target="_blank" rel="noreferrer">{j.title}</a></div>
-                  <div className="meta"><b>{j.company}</b>{j.location ? ` · ${countryFlag(profile?.country_code ?? '')} ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · {j.posted}</div>
+                  <div className="meta"><b>{j.company}</b>{j.location ? ` · ${countryFlag(profile?.country_code ?? '')} ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · Posted {postedOn(j.posted)}</div>
                   {j.hiring_team.length ? <div className="small muted">On the posting: {j.hiring_team.map((h) => h.name).join(', ')}</div> : null}
                 </div>
                 <button className="btn sm" onClick={() => pickJob(j)} disabled={busy !== null}>
-                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} Who is hiring <span className="price">{inr(PRICE_PAISE.contact)}</span>
+                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} Find contacts <span className="price">· {inr(PRICE_PAISE.contact)}</span>
                 </button>
               </div>
             </div>
@@ -256,19 +273,19 @@ export default function Flow({
           <div className="row">
             {jobs.length > 0 && moreJobs ? (
               <button className="btn" onClick={() => findJobs(jobsPage + 1)} disabled={busy !== null}>
-                {busy === 'more' ? <span className="spin" /> : null} See 10 more jobs <span className="price">{inr(PRICE_PAISE.jobs)}</span>
+                {busy === 'more' ? <span className="spin" /> : null} Find more jobs <span className="price">· {inr(PRICE_PAISE.jobs)}</span>
               </button>
             ) : null}
-            <button className="btn ghost sm" onClick={() => setStep(1)}>back</button>
+            <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button>
           </div>
         </section>
       ) : null}
 
       {step === 3 && job && people ? (
         <section>
-          <h2>People at {job.company}</h2>
-          <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Managers first, recruiters next. Reveal an email, then draft the note to that person.</p>
-          {people.length === 0 ? <p className="muted">No current managers or recruiters found. You can still draft a note to the hiring manager.</p> : null}
+          <h2>Contacts at {job.company}</h2>
+          <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Choose a contact to look up their email or draft a message.</p>
+          {people.length === 0 ? <p className="muted">No managers or recruiters found at this company. You can still draft an email without a contact.</p> : null}
           <div className="card">
             {people.map((p) => {
               const e = emails[p.linkedin_url]
@@ -283,11 +300,11 @@ export default function Flow({
                   <div className="row" style={{ flexShrink: 0 }}>
                     {!e ? (
                       <button className="btn ghost sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
-                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Reveal email <span className="price">{inr(PRICE_PAISE.email)}</span>
+                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Find email <span className="price">· {inr(PRICE_PAISE.email)}</span>
                       </button>
                     ) : null}
                     <button className="btn sm" onClick={() => draft(p)} disabled={busy !== null}>
-                      {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft note <span className="price">{inr(PRICE_PAISE.draft)}</span>
+                      {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft email <span className="price">· {inr(PRICE_PAISE.draft)}</span>
                     </button>
                   </div>
                 </div>
@@ -295,43 +312,44 @@ export default function Flow({
             })}
           </div>
           <div className="row">
-            <button className="btn ghost" onClick={() => draft(null)} disabled={busy !== null}>Draft without a name <span className="price">{inr(PRICE_PAISE.draft)}</span></button>
-            <button className="btn ghost sm" onClick={() => setStep(2)}>back</button>
+            <button className="btn ghost" onClick={() => draft(null)} disabled={busy !== null}>Draft without a contact <span className="price">· {inr(PRICE_PAISE.draft)}</span></button>
+            <button className="btn ghost sm" onClick={() => setStep(2)}>Back to jobs</button>
           </div>
         </section>
       ) : null}
 
       {step === 4 && job && note ? (
         <section>
-          <h2>Your email{person ? ` to ${person.name.split(' ')[0]}` : ''}</h2>
-          <p className="small muted">{job.title} at {job.company}{person && emails[person.linkedin_url] ? ` · send to ${[...emails[person.linkedin_url].work, ...emails[person.linkedin_url].personal][0]}` : ''}</p>
+          <h2>Your email draft{person ? ` for ${person.name.split(' ')[0]}` : ''}</h2>
+          <p className="small muted">About: {job.title} at {job.company}{person && emails[person.linkedin_url] ? <> · To: <span className="email">{[...emails[person.linkedin_url].work, ...emails[person.linkedin_url].personal][0]}</span></> : null}</p>
+          <p className="small muted">Review the details and personalise the draft before sending.</p>
           <pre className="note">{note}</pre>
           <div className="row">
-            <button className="btn" onClick={() => navigator.clipboard.writeText(note)}>Copy email</button>
+            <CopyDraft text={note} />
             {person && emails[person.linkedin_url]?.work[0] ? (
               <a className="btn ghost" href={`mailto:${emails[person.linkedin_url].work[0]}?subject=${encodeURIComponent(note.split('\n')[0].replace(/^Subject:\s*/i, ''))}&body=${encodeURIComponent(note.split('\n').slice(2).join('\n'))}`}>Open in mail</a>
             ) : null}
-            <button className="btn ghost sm" onClick={() => setStep(3)}>another person</button>
-            <button className="btn ghost sm" onClick={() => setStep(2)}>another job</button>
+            <button className="btn ghost sm" onClick={() => setStep(3)}>Choose another contact</button>
+            <button className="btn ghost sm" onClick={() => setStep(2)}>Choose another job</button>
           </div>
           <div className="variants">
-            <span className="small muted">Try another tone:</span>
+            <span className="small muted">Refine your draft</span>
             {VARIANT_LABELS.map((v) => (
               <button key={v.id} className="btn ghost sm" onClick={() => rewrite(v.id)} disabled={busy !== null}>
-                {busy === `v:${v.id}` ? <span className="spin" /> : null} {v.label} <span className="price">{inr(PRICE_PAISE.draft)}</span>
+                {busy === `v:${v.id}` ? <span className="spin" /> : null} {v.label} <span className="price">· {inr(PRICE_PAISE.draft)}</span>
               </button>
             ))}
           </div>
-          <p className="small muted">Saved to <a href="/saved">your list</a> automatically.</p>
+          <p className="small muted">Saved automatically. <a href="/saved">View saved drafts →</a></p>
         </section>
       ) : null}
 
-      <p className="footer">Each step is charged only when it succeeds. Balance never goes below zero.</p>
+      <p className="footer">You’re charged only when a step succeeds.</p>
     </main>
   )
 }
 
-function StatusBar({ step, onJump, busy }: { step: StepIndex; onJump: (i: StepIndex) => void; busy: string | null }) {
+function StatusBar({ step, onJump }: { step: StepIndex; onJump: (i: StepIndex) => void }) {
   return (
     <ol className="status" aria-label="progress">
       {STEPS.map((label, i) => {
@@ -339,7 +357,7 @@ function StatusBar({ step, onJump, busy }: { step: StepIndex; onJump: (i: StepIn
         return (
           <li key={label} className={state} onClick={() => onJump(i as StepIndex)}>
             <span className="dot">{i < step ? '✓' : i + 1}</span>
-            <span className="label">{label}{i === step && busy ? '…' : ''}</span>
+            <span className="label">{label}</span>
           </li>
         )
       })}
@@ -368,7 +386,8 @@ function ResumeStep({ resume, setResume, busy, onNext, setError }: { resume: str
 
   return (
     <section>
-      <h2>Your resume</h2>
+      <h2>Add your resume</h2>
+      <p className="small muted">We’ll use your experience to suggest job titles for your search.</p>
       <div
         className="drop"
         onDragOver={(e) => e.preventDefault()}
@@ -382,12 +401,12 @@ function ResumeStep({ resume, setResume, busy, onNext, setError }: { resume: str
         <button className="btn ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? <span className="spin" /> : null} Upload PDF or DOCX
         </button>
-        <span className="small muted">{fileName ? `Loaded ${fileName}` : 'or drop a file here, or paste below'}</span>
+        <span className="small muted">{fileName ? `Loaded ${fileName}` : 'Drag and drop a file here, or paste your resume below.'}</span>
       </div>
-      <textarea value={resume} onChange={(e) => setResume(e.target.value)} placeholder="Paste the text of your resume here." spellCheck={false} />
+      <textarea value={resume} onChange={(e) => setResume(e.target.value)} placeholder="Paste your resume text here" spellCheck={false} />
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={onNext} disabled={busy !== null || uploading || resume.trim().length < 80}>
-          {busy === 'parse' ? <span className="spin" /> : null} Continue <span className="price">{inr(PRICE_PAISE.parse)}</span>
+          {busy === 'parse' ? <span className="spin" /> : null} Analyse resume <span className="price">· {inr(PRICE_PAISE.parse)}</span>
         </button>
         <span className="small muted">{resume.trim().length < 80 ? 'Add your resume to continue.' : `${resume.trim().split(/\s+/).length} words`}</span>
       </div>
@@ -395,3 +414,19 @@ function ResumeStep({ resume, setResume, busy, onNext, setError }: { resume: str
   )
 }
 
+
+function CopyDraft({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      className="btn"
+      onClick={() => {
+        navigator.clipboard.writeText(text)
+        setDone(true)
+        setTimeout(() => setDone(false), 1400)
+      }}
+    >
+      {done ? 'Draft copied' : 'Copy draft'}
+    </button>
+  )
+}

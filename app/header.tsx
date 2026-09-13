@@ -13,13 +13,13 @@ export default function Header({ active, email, balance, onRecharge }: { active:
     <nav className="nav">
       <a className="brand" href="/">Job Hunter</a>
       <div className="nav-right">
-        {tab('search', '/app', 'Search')}
+        {tab('search', '/app', 'Find jobs')}
         {tab('saved', '/saved', 'Saved')}
         <span className={`balance${balance < 2000 ? ' low' : ''}`}>
-          <span className="amt" title={`Balance for ${email}`}>{inr(balance)}</span>
-          <button className="go" onClick={onRecharge}>Recharge</button>
+          <span className="amt" title={`Balance for ${email}`}><span className="amt-label">Balance:</span> {inr(balance)}</span>
+          <button className="go" onClick={onRecharge}>Add credits</button>
         </span>
-        <form action="/api/auth/logout" method="post"><button className="btn ghost sm" type="submit">sign out</button></form>
+        <form action="/api/auth/logout" method="post"><button className="btn ghost sm" type="submit">Sign out</button></form>
       </div>
     </nav>
   )

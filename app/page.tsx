@@ -20,13 +20,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     <main className="wrap">
       <nav className="nav">
         <span className="brand">Job Hunter</span>
-        <span className="nav-right small">₹49 free to start</span>
+        <span className="nav-right small">₹49 in free credits</span>
       </nav>
 
-      <h1>Upload your resume. Get the job, the person hiring, and the note.</h1>
+      <section className="hero">
+      <h1>Find jobs that fit. Know who to contact.</h1>
       <p className="muted">
-        Fresh postings that match you, the manager or recruiter behind each one, their email, and a short note
-        you can send today. Pay per step, in rupees, only when it works.
+        Upload your resume to find recent openings, relevant contacts at each company, and an email draft based on
+        your experience. Choose each step as you go. Pay per step. Failed steps aren’t charged.
       </p>
 
       {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error}).`}</div> : null}
@@ -36,35 +37,36 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <GoogleMark /> Continue with Google
         </a>
       </p>
-      <p className="small muted">Every new account starts with ₹49. Recharge by UPI when it runs out.</p>
+      <p className="small muted">Start with ₹49 in free credits. Add more with UPI whenever you need them.</p>
+      </section>
 
       <h2>How it works</h2>
       <div className="steps">
-        <div><span>Sign in with Google. Every new account starts with ₹49.</span></div>
-        <div><span>Upload your resume as a PDF, or paste it in. We read it and work out which job titles suit you.</span></div>
-        <div><span>We show you ten jobs posted in the last two weeks that match.</span></div>
-        <div><span>Pick one. We find the manager or recruiter hiring for it, and get you their email address.</span></div>
-        <div><span>We write the email for you, in your own words. Copy it and send it.</span></div>
+        <div><span><b>Sign in and get ₹49 in free credits.</b> Your jobs, revealed emails and drafts are saved to your account.</span></div>
+        <div><span><b>Add your resume.</b> Upload a PDF or DOCX, or paste your resume text. We’ll suggest job titles based on your experience.</span></div>
+        <div><span><b>Review your search.</b> Adjust your job titles, country and posting date range, then find matching openings.</span></div>
+        <div><span><b>Find people to contact.</b> Choose a job, explore contacts at the company, and look up an email address.</span></div>
+        <div><span><b>Prepare your email.</b> Get a draft based on your experience and the role. Review it, copy it, and send it when you’re ready.</span></div>
       </div>
 
       <h2>What we do</h2>
       <ul className="plain">
-        <li><b>We read your resume</b> and turn it into a real job search, so you are not guessing at keywords.</li>
-        <li><b>We find jobs posted in the last two weeks</b>, from company career pages and job boards, not a stale database.</li>
-        <li><b>We find the person doing the hiring</b>, usually the engineering manager or the recruiter, not a careers@ inbox.</li>
-        <li><b>We get you their email address</b>, so you can write to them directly instead of applying and waiting.</li>
-        <li><b>We write the first email for you</b>, in your voice, using your actual experience against that one posting.</li>
+        <li><b>Search from your resume.</b> Use your experience to find relevant job titles.</li>
+        <li><b>Find recent openings.</b> Search career pages and job boards by posting date.</li>
+        <li><b>Discover contacts at the company.</b> Find managers and recruiters you could approach about a role.</li>
+        <li><b>Look up email addresses.</b> Choose a contact and search for their email.</li>
+        <li><b>Draft a relevant introduction.</b> Connect your experience to the role you’re interested in.</li>
       </ul>
 
-      <h2>What a step costs</h2>
+      <h2>Pay for each step you use</h2>
       <div className="steps">
-        <div><span>Read your resume <span className="price">{inr(PRICE_PAISE.parse)}</span></span></div>
-        <div><span>Ten matching postings from the last two weeks <span className="price">{inr(PRICE_PAISE.jobs)}</span></span></div>
-        <div><span>Three people to write to at a company <span className="price">{inr(PRICE_PAISE.contact)}</span></span></div>
-        <div><span>Reveal one person&apos;s email <span className="price">{inr(PRICE_PAISE.email)}</span></span></div>
-        <div><span>Draft the note <span className="price">{inr(PRICE_PAISE.draft)}</span></span></div>
+        <div><span>Analyse your resume <span className="price">{inr(PRICE_PAISE.parse)}</span></span></div>
+        <div><span>Search for matching jobs <span className="price">{inr(PRICE_PAISE.jobs)}</span></span></div>
+        <div><span>Find contacts at a company <span className="price">{inr(PRICE_PAISE.contact)}</span></span></div>
+        <div><span>Reveal a contact&apos;s email <span className="price">{inr(PRICE_PAISE.email)}</span></span></div>
+        <div><span>Draft an email <span className="price">{inr(PRICE_PAISE.draft)}</span></span></div>
       </div>
-      <p className="small muted">A failed step is never charged. Everything you find is saved to your account, and looking at it again is free.</p>
+      <p className="small muted">Failed steps aren’t charged. Your jobs, revealed emails and drafts are saved automatically. Reopen them at no extra cost.</p>
     </main>
   )
 }

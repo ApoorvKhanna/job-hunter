@@ -3,19 +3,20 @@
 import { useMemo, useState } from 'react'
 import Header from '../header'
 import Recharge from '../recharge'
+import { postedOn } from '@/lib/format'
 import type { SavedEmail, SavedItem, SavedJob, SavedNote } from '@/lib/saved'
 
 type Tab = 'note' | 'email' | 'job'
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'note', label: 'Emails written' },
-  { id: 'email', label: 'Contacts found' },
-  { id: 'job', label: 'Jobs found' },
+  { id: 'note', label: 'Email drafts' },
+  { id: 'email', label: 'Contacts' },
+  { id: 'job', label: 'Jobs' },
 ]
 
 function when(at: string): string {
   const d = new Date(at)
   const days = Math.floor((Date.now() - d.getTime()) / 86400000)
-  if (days === 0) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+  if (days === 0) return `at ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
   if (days === 1) return 'yesterday'
   if (days < 7) return `${days} days ago`
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
@@ -41,8 +42,8 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
       <Header active="saved" email={email} balance={balancePaise} onRecharge={() => setRecharge(true)} />
       {recharge ? <Recharge need={0} balance={balancePaise} upi={upi} onClose={() => setRecharge(false)} /> : null}
 
-      <h2 style={{ marginTop: 0 }}>Everything you have found</h2>
-      <p className="small muted">Saved automatically. Nothing here costs anything to look at again.</p>
+      <h2 style={{ marginTop: 0 }}>Your saved results</h2>
+      <p className="small muted">Your saved jobs, contacts and email drafts are free to revisit.</p>
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -53,12 +54,12 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
       </div>
 
       {items.length > 0 ? (
-        <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by company, role or name" style={{ marginBottom: 14 }} />
+        <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by company, job title or name" style={{ marginBottom: 14 }} />
       ) : null}
 
       {tab === 'note' ? (
         groups.note.filter((n) => match(`${n.subject} ${n.company} ${n.jobTitle} ${n.person ?? ''}`)).length === 0 ? (
-          <Empty what="emails" />
+          <Empty what="note" filtered={!!needle} />
         ) : (
           groups.note
             .filter((n) => match(`${n.subject} ${n.company} ${n.jobTitle} ${n.person ?? ''}`))
@@ -68,7 +69,7 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 
       {tab === 'email' ? (
         groups.email.filter((e) => match(`${e.name} ${e.company} ${e.title} ${e.emails.join(' ')}`)).length === 0 ? (
-          <Empty what="contacts" />
+          <Empty what="email" filtered={!!needle} />
         ) : (
           groups.email
             .filter((e) => match(`${e.name} ${e.company} ${e.title} ${e.emails.join(' ')}`))
@@ -81,8 +82,8 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
                     <div className="email">{e.emails.join(' · ') || 'no email'}</div>
                   </div>
                   <div className="row" style={{ flexShrink: 0 }}>
-                    <span className="meta">{when(e.at)}</span>
-                    {e.emails[0] ? <CopyBtn text={e.emails.join(', ')} label="copy" /> : null}
+                    <span className="meta">Saved {when(e.at)}</span>
+                    {e.emails[0] ? <CopyBtn text={e.emails.join(', ')} label={e.emails.length > 1 ? 'Copy email addresses' : 'Copy email address'} /> : null}
                   </div>
                 </div>
               </div>
@@ -92,7 +93,7 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 
       {tab === 'job' ? (
         groups.job.filter((j) => match(`${j.title} ${j.company} ${j.location}`)).length === 0 ? (
-          <Empty what="jobs" />
+          <Empty what="job" filtered={!!needle} />
         ) : (
           groups.job
             .filter((j) => match(`${j.title} ${j.company} ${j.location}`))
@@ -101,9 +102,9 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
                 <div className="row between">
                   <div>
                     <div className="job-title"><a href={j.url} target="_blank" rel="noreferrer">{j.title}</a></div>
-                    <div className="meta"><b>{j.company}</b>{j.location ? ` · ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · posted {j.posted}</div>
+                    <div className="meta"><b>{j.company}</b>{j.location ? ` · ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · Posted {postedOn(j.posted)}</div>
                   </div>
-                  <span className="meta" style={{ flexShrink: 0 }}>{when(j.at)}</span>
+                  <span className="meta" style={{ flexShrink: 0 }}>Saved {when(j.at)}</span>
                 </div>
               </div>
             ))
@@ -113,10 +114,26 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
   )
 }
 
-function Empty({ what }: { what: string }) {
+const EMPTY: Record<Tab, { filtered: [string, string]; none: [string, string] }> = {
+  email: {
+    filtered: ['No contacts match your search.', 'Try a different company, job title or name.'],
+    none: ['No saved contacts yet.', 'Find a contact’s email to save it here.'],
+  },
+  job: {
+    filtered: ['No jobs match your search.', 'Try a different company or job title.'],
+    none: ['No saved jobs yet.', 'Run a job search to start your list.'],
+  },
+  note: {
+    filtered: ['No drafts match your search.', 'Try a different company, job title or name.'],
+    none: ['No email drafts yet.', 'Choose a job and create your first draft.'],
+  },
+}
+
+function Empty({ what, filtered }: { what: Tab; filtered: boolean }) {
+  const [head, hint] = EMPTY[what][filtered ? 'filtered' : 'none']
   return (
     <p className="muted">
-      No {what} yet. <a href="/app">Start a search</a> and everything you find lands here.
+      <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{head}</b> {hint}{filtered ? null : <> <a href="/app">Find jobs</a></>}
     </p>
   )
 }
@@ -134,8 +151,8 @@ function NoteCard({ n }: { n: SavedNote }) {
           </div>
         </div>
         <div className="row" style={{ flexShrink: 0 }}>
-          <span className="meta">{when(n.at)}</span>
-          <CopyBtn text={full} label="copy email" />
+          <span className="meta">Saved {when(n.at)}</span>
+          <CopyBtn text={full} label="Copy draft" />
         </div>
       </div>
       <pre className="note">{n.body}</pre>
@@ -154,7 +171,7 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
         setTimeout(() => setDone(false), 1400)
       }}
     >
-      {done ? 'copied' : label}
+      {done ? 'Copied' : label}
     </button>
   )
 }
