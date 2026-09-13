@@ -24,7 +24,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       </nav>
 
       <section className="hero">
-        <div>
+        <div className="hero-text">
           <h1>Find jobs that fit. Know who to contact.</h1>
           <p className="muted">
             Upload your resume to find recent openings, relevant contacts at each company, and an email draft based on
@@ -38,7 +38,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           </p>
           <p className="small muted" style={{ margin: 0 }}>Start with ₹49 in granted credits. Add more with UPI whenever you need them.</p>
         </div>
-        <Arch />
+        <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>
       </section>
 
       <div className="stepgrid">
@@ -82,39 +82,6 @@ function Icon({ d }: { d: string }) {
   return (
     <svg className="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={d} />
-    </svg>
-  )
-}
-
-/** The arch from the paintings: marble columns, a lapis sky, steps, one figure. */
-function Arch() {
-  return (
-    <svg className="art" viewBox="0 0 360 320" aria-hidden="true">
-      <rect width="360" height="320" fill="#e9e3d5" />
-      <path d="M80 300V150a100 100 0 0 1 200 0v150Z" fill="#1e2f96" />
-      <circle cx="222" cy="112" r="13" fill="#f6f3ea" />
-      <g fill="#d4cdbb">
-        <rect x="40" y="130" width="40" height="170" />
-        <rect x="280" y="130" width="40" height="170" />
-        <rect x="32" y="116" width="56" height="14" />
-        <rect x="272" y="116" width="56" height="14" />
-        <rect x="0" y="0" width="360" height="26" />
-      </g>
-      <g stroke="#bfb8a6" strokeWidth="2">
-        <path d="M50 130v170M60 130v170M70 130v170M290 130v170M300 130v170M310 130v170" />
-        <path d="M0 26h360" />
-      </g>
-      <g fill="#dcd6c6">
-        <rect x="70" y="258" width="220" height="14" />
-        <rect x="45" y="272" width="270" height="14" />
-        <rect x="20" y="286" width="320" height="14" />
-        <rect x="0" y="300" width="360" height="20" />
-      </g>
-      <g stroke="#c9c2b0" strokeWidth="1">
-        <path d="M70 258h220M45 272h270M20 286h320M0 300h360" />
-      </g>
-      <path d="M180 228l-9 30h18Z" fill="#b3261e" />
-      <circle cx="180" cy="221" r="5.5" fill="#b8902e" />
     </svg>
   )
 }
