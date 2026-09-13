@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { inr } from '@/lib/prices'
+import Header from '../header'
+import Recharge from '../recharge'
 import type { SavedEmail, SavedItem, SavedJob, SavedNote } from '@/lib/saved'
 
 type Tab = 'note' | 'email' | 'job'
@@ -20,8 +21,9 @@ function when(at: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-export default function SavedView({ items, balancePaise, name }: { items: SavedItem[]; balancePaise: number; name: string }) {
+export default function SavedView({ items, balancePaise, email, upi }: { items: SavedItem[]; balancePaise: number; email: string; upi: { id: string; name: string } }) {
   const [tab, setTab] = useState<Tab>('note')
+  const [recharge, setRecharge] = useState(false)
   const [q, setQ] = useState('')
 
   const groups = useMemo(() => {
@@ -36,14 +38,8 @@ export default function SavedView({ items, balancePaise, name }: { items: SavedI
 
   return (
     <main className="wrap">
-      <nav className="nav">
-        <a className="brand" href="/">Job Hunter</a>
-        <div className="nav-right">
-          <a className="navlink" href="/app">Search</a>
-          <span className="navlink on">Saved</span>
-          <span className="pill" title={`Balance for ${name}`}>{inr(balancePaise)}</span>
-        </div>
-      </nav>
+      <Header active="saved" email={email} balance={balancePaise} onRecharge={() => setRecharge(true)} />
+      {recharge ? <Recharge need={0} balance={balancePaise} upi={upi} onClose={() => setRecharge(false)} /> : null}
 
       <h2 style={{ marginTop: 0 }}>Everything you have found</h2>
       <p className="small muted">Saved automatically. Nothing here costs anything to look at again.</p>
