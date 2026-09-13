@@ -182,12 +182,23 @@ select { border-radius: 4px; }
 ul.plain li::before { width: 6px; height: 6px; border-radius: 0; transform: rotate(45deg); background: var(--accent); opacity: 0.8; top: 8px; }
 .price { opacity: 0.8; }
 
-/* Landing hero: the sky through the arch. Stays lapis in both modes. */
-.hero { background: var(--hero-bg); color: var(--hero-ink); padding: 34px 30px 26px; border-radius: 6px; margin: 4px 0 8px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
-.hero h1 { color: inherit; max-width: 22ch; }
-.hero .muted { color: inherit; opacity: 0.82; max-width: 56ch; }
+/* Landing: fits one desktop screen. Nav, hero, five steps, footer. */
+.landing { min-height: 100dvh; display: flex; flex-direction: column; max-width: 1080px; margin: 0 auto; padding: 18px 24px 16px; }
+.landing .nav { margin-bottom: 18px; }
+.hero { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 30px; align-items: center; background: var(--hero-bg); color: var(--hero-ink); padding: 28px 32px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+.hero h1 { color: inherit; font-size: 42px; margin: 0 0 12px; max-width: 22ch; }
+.hero .muted { color: inherit; opacity: 0.82; max-width: 52ch; margin-bottom: 0; }
 .hero .btn { background: #f6f3ea; color: #15171f; border-color: #f6f3ea; }
 .hero .btn:hover { background: #fff; }
 .hero .notice { color: var(--ink); }
-.hero + h2 { margin-top: 36px; }
-@media (max-width: 480px) { h1 { font-size: 36px; } h2 { font-size: 23px; } .hero { padding: 26px 20px 20px; } }
+.art { width: 100%; height: auto; max-height: 290px; display: block; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+.stepgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 20px 0 0; }
+.stepgrid > div { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 13px 12px; font-size: 13px; line-height: 1.45; color: var(--muted); display: flex; flex-direction: column; }
+.stepgrid .num { font-family: var(--serif); font-size: 15px; font-weight: 600; color: var(--accent); }
+.stepgrid .ico { position: absolute; top: 12px; right: 12px; color: var(--accent); }
+.stepgrid b { display: block; color: var(--ink); font-weight: 600; font-size: 14px; margin: 8px 0 3px; }
+.stepgrid .price { display: block; margin-top: auto; padding-top: 8px; font-size: 12px; color: var(--ink); opacity: 0.9; }
+.landing .footer { margin-top: auto; padding-top: 16px; }
+@media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding: 24px 22px; } .art { max-height: 220px; } .stepgrid { grid-template-columns: 1fr 1fr; } .landing { min-height: 0; } }
+@media (max-width: 520px) { .stepgrid { grid-template-columns: 1fr; } .landing { padding-inline: 16px; } }
+@media (max-width: 480px) { h1, .hero h1 { font-size: 34px; } h2 { font-size: 23px; } }
