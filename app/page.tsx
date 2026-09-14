@@ -10,6 +10,7 @@ const ERRORS: Record<string, string> = {
   state_mismatch: 'That sign-in link expired. Try again.',
   google_failed: 'Google did not confirm your account. Try again.',
   not_configured: 'Sign-in is not set up yet.',
+  one_per_network: 'One account per network. Sign in with the Google account you first used here.',
 }
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

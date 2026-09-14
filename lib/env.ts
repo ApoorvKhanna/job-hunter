@@ -19,6 +19,11 @@ export const OWNER_API_KEY = process.env.VAAYA_OWNER_KEY || PROVIDER_API_KEY
 // API) at a fraction of the per-job cost; unset, we fall back to the old
 // vendor so the app keeps working.
 export const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY ?? ''
+// Jobs go through the provider (openwebninja/jsearch on Vaaya) first, so every
+// paid call settles on one ledger. The direct key above is only the fallback
+// while the provider has no key of its own; remove it once the provider path
+// is confirmed live. `JOBS_VIA_PROVIDER=false` forces the direct path.
+export const JOBS_VIA_PROVIDER = process.env.JOBS_VIA_PROVIDER !== 'false'
 
 // Managed customers: one Vaaya identity + x402 wallet per signed-in user, so
 // spend is attributed per person instead of pooled on the operator key. Off

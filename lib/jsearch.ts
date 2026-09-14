@@ -7,7 +7,9 @@
 // bands and a seniority label. Salary comes through when the publisher
 // states it; seniority we no longer use at all.
 import { COUNTRIES } from './countries'
-import { JSEARCH_API_KEY } from './env'
+import { JOBS_VIA_PROVIDER, JSEARCH_API_KEY } from './env'
+import type { Account } from './ledger'
+import { runFor } from './provider'
 import type { Job } from './types'
 
 // OpenWeb Ninja's direct API (not the RapidAPI listing): different host and a
@@ -105,10 +107,31 @@ function toJob(j: RawJob): Job | null {
   }
 }
 
-export const jsearchEnabled = () => !!JSEARCH_API_KEY
+export const jsearchEnabled = () => JOBS_VIA_PROVIDER || !!JSEARCH_API_KEY
 
-/** One page of matching jobs, newest-first, already filtered to the window. */
-export async function searchJobs(q: JSearchQuery): Promise<{ ok: true; jobs: Job[] } | { ok: false; code: string; message: string }> {
+/** The provider's own parameters for one page. Same shape as the direct API. */
+function providerParams(q: JSearchQuery): Record<string, unknown> {
+  const name = countryName(q.countryCode)
+  return {
+    query: `${q.titles.slice(0, 3).join(' OR ')}${name ? ` in ${name}` : ''}`,
+    page: q.page + 1,
+    num_pages: 2,
+    date_posted: q.bucket ?? bucketFor(q.days),
+    ...(q.countryCode ? { country: q.countryCode.toLowerCase() } : {}),
+    ...(q.remoteOnly ? { remote_jobs_only: true } : {}),
+  }
+}
+
+/** One page of matching jobs, newest-first, already filtered to the window.
+ *  Settles on the provider (1¢) when it carries the vendor; falls back to the
+ *  direct key only while that path is unavailable. */
+export async function searchJobs(q: JSearchQuery, account?: Account): Promise<{ ok: true; jobs: Job[] } | { ok: false; code: string; message: string }> {
+  if (JOBS_VIA_PROVIDER && account) {
+    const out = await runFor<{ data?: RawJob[] }>(account, 'openwebninja', 'jsearch', providerParams(q), 2)
+    if (out.ok) return { ok: true, jobs: window(out.data.data ?? [], q.days) }
+    if (!JSEARCH_API_KEY) return { ok: false, code: out.code, message: out.message }
+    console.log('[jsearch] provider miss, direct fallback', JSON.stringify({ detail: out.detail ?? out.code }))
+  }
   if (!JSEARCH_API_KEY) return { ok: false, code: 'not_configured', message: 'Job search is not configured.' }
   const name = countryName(q.countryCode)
   const url = new URL(ENDPOINT)
@@ -131,8 +154,13 @@ export async function searchJobs(q: JSearchQuery): Promise<{ ok: true; jobs: Job
     return { ok: false, code: 'upstream', message: 'That step did not go through. Nothing was charged. Try again in a minute.' }
   }
   const body = (await res.json().catch(() => ({}))) as { data?: RawJob[] }
-  const cutoff = Date.now() - q.days * 86400000
-  const jobs = (body.data ?? [])
+  return { ok: true, jobs: window(body.data ?? [], q.days) }
+}
+
+/** Rows inside the window, newest first, one per posting, at most ten. */
+function window(raw: RawJob[], days: number): Job[] {
+  const cutoff = Date.now() - days * 86400000
+  const jobs = raw
     .map(toJob)
     .filter((j): j is Job => !!j)
     .filter((j) => {
@@ -152,5 +180,5 @@ export async function searchJobs(q: JSearchQuery): Promise<{ ok: true; jobs: Job
       seen.add(k)
       return true
     })
-  return { ok: true, jobs: unique.slice(0, 10) }
+  return unique.slice(0, 10)
 }

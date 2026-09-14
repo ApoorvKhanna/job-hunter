@@ -26,6 +26,8 @@ export interface Account {
   pending: Pending[]
   /** The user's own Vaaya identity + x402 wallet, when managed customers are on. */
   customer?: CustomerRef
+  /** Hash of the network the account was created from (see ipgate.ts). */
+  network?: string
 }
 
 const path = (sub: string) => `users/${sub}.json`
@@ -57,18 +59,28 @@ export class InsufficientBalance extends Error {
   }
 }
 
-/** Get or create the account. New accounts start with the welcome credit. */
-export async function ensureAccount(who: { sub: string; email: string; name: string }): Promise<Account> {
+/** Get or create the account. New accounts start with the welcome credit
+ *  unless the sign-in gate withheld it (a repeat network gets ₹0). */
+export async function ensureAccount(
+  who: { sub: string; email: string; name: string },
+  opts: { welcomePaise?: number; network?: string } = {},
+): Promise<Account> {
   const found = await load(who.sub)
   if (found) return found.account
+  const welcome = opts.welcomePaise ?? START_CREDIT_PAISE
   const account: Account = {
     sub: who.sub,
     email: who.email,
     name: who.name,
     createdAt: new Date().toISOString(),
-    balancePaise: START_CREDIT_PAISE,
-    entries: [{ at: new Date().toISOString(), kind: 'credit', paise: START_CREDIT_PAISE, note: 'Welcome credit' }],
+    balancePaise: welcome,
+    entries: [
+      welcome > 0
+        ? { at: new Date().toISOString(), kind: 'credit', paise: welcome, note: 'Welcome credit' }
+        : { at: new Date().toISOString(), kind: 'credit', paise: 0, note: 'No welcome credit: this network already has an account' },
+    ],
     pending: [],
+    ...(opts.network ? { network: opts.network } : {}),
   }
   try {
     await put(path(who.sub), JSON.stringify(account), {

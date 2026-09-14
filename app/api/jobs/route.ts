@@ -122,8 +122,8 @@ export async function POST(req: Request) {
       let jobs: Job[] = []
 
       if (jsearchEnabled()) {
-        // 1. The cheap source, at exactly the window the user asked for.
-        const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page })
+        // 1. The cheap source (through the provider, 1¢), at exactly the window the user asked for.
+        const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page }, account)
         if (!first.ok) return { ok: false, code: first.code, message: first.message }
         stats.jsearch = first.jobs.length
         jobs = first.jobs
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
         //    is denser but nominally misses days 8-14, so this catches those
         //    before we spend anything.
         if (jobs.length < THIN && bucketFor(days) !== 'month') {
-          const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page, bucket: 'month' })
+          const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page, bucket: 'month' }, account)
           if (wider.ok && wider.jobs.length > 0) {
             stats.jsearch_month = wider.jobs.length
             jobs = mergeJobs(jobs, wider.jobs).slice(0, THIN)
@@ -159,7 +159,7 @@ export async function POST(req: Request) {
         if (jobs.length === 0) {
           for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
             if (t.days === days && t.country === country) continue
-            const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page })
+            const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page }, account)
             if (!wide.ok) break
             if (wide.jobs.length > 0) {
               stats.jsearch_widened = wide.jobs.length

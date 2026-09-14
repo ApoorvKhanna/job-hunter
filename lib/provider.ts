@@ -5,7 +5,7 @@ import { ensureFunded, refreshCustomer } from './customer-flow'
 import type { Account } from './ledger'
 
 export interface ProviderOk<T> { ok: true; data: T }
-export interface ProviderErr { ok: false; code: string; message: string }
+export interface ProviderErr { ok: false; code: string; message: string; /** the provider's own code, for logs and fallbacks; never shown */ detail?: string }
 export type ProviderResult<T> = ProviderOk<T> | ProviderErr
 
 async function call(
@@ -36,7 +36,7 @@ function fail(status: number, body: Record<string, unknown>): ProviderErr {
   // upstream copy to the user. The user sees one neutral line; the real
   // reason goes to the logs.
   console.error('[provider]', status, code, src.message)
-  return { ok: false, code: 'upstream', message: 'That step did not go through. Nothing was charged. Try again in a minute.' }
+  return { ok: false, code: 'upstream', message: 'That step did not go through. Nothing was charged. Try again in a minute.', detail: code }
 }
 
 /** One catalog call, capped at maxCostCents. */
