@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { GOOGLE_CLIENT_ID } from '@/lib/env'
+import { GOOGLE_CLIENT_ID, START_CREDIT_PAISE } from '@/lib/env'
 import { PRICE_PAISE, inr } from '@/lib/prices'
 import { readSession } from '@/lib/session'
 
@@ -21,7 +21,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     <main className="landing">
       <nav className="nav">
         <span className="brand">Job Hunter</span>
-        <span className="nav-right small">₹49 in granted credits</span>
+        <span className="nav-right small">{inr(START_CREDIT_PAISE)} in granted credits</span>
       </nav>
 
       <section className="hero">
@@ -37,7 +37,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               <GoogleMark /> Continue with Google
             </a>
           </p>
-          <p className="small muted" style={{ margin: 0 }}>Start with ₹49 in granted credits. Add more with UPI whenever you need them.</p>
+          <p className="small muted" style={{ margin: 0 }}>Start with {inr(START_CREDIT_PAISE)} in granted credits. Add more with UPI whenever you need them.</p>
         </div>
         <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>
       </section>
