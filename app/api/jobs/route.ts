@@ -124,14 +124,22 @@ export async function POST(req: Request) {
       if (jsearchEnabled()) {
         // 1. The cheap source (through the provider, 1¢), at exactly the window the user asked for.
         const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page }, account)
-        if (!first.ok) return { ok: false, code: first.code, message: first.message }
-        stats.jsearch = first.jobs.length
-        jobs = first.jobs
+        if (first.ok) {
+          stats.jsearch = first.jobs.length
+          jobs = first.jobs
+        } else {
+          // The cheap source being down (quota, outage) must not take the
+          // step down with it: treat it as thin and let the deeper source
+          // carry the search. Costs 40c a call while it lasts, so the log
+          // line is the signal to top the cheap vendor up.
+          console.log('[jobs] cheap source failed, deeper source carries', JSON.stringify({ code: first.code }))
+          stats.jsearch = -1
+        }
 
         // 2. Thin? Retry the cheap source on the wider bucket first. `week`
         //    is denser but nominally misses days 8-14, so this catches those
         //    before we spend anything.
-        if (jobs.length < THIN && bucketFor(days) !== 'month') {
+        if (stats.jsearch >= 0 && jobs.length < THIN && bucketFor(days) !== 'month') {
           const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page, bucket: 'month' }, account)
           if (wider.ok && wider.jobs.length > 0) {
             stats.jsearch_month = wider.jobs.length
@@ -156,7 +164,7 @@ export async function POST(req: Request) {
         }
 
         // 4. Nothing at all? Widen the cheap source before giving up.
-        if (jobs.length === 0) {
+        if (stats.jsearch >= 0 && jobs.length === 0) {
           for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
             if (t.days === days && t.country === country) continue
             const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page }, account)
