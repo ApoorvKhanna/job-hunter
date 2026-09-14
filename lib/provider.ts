@@ -62,6 +62,7 @@ export async function runFor<T>(
   if (cust?.status === 'ready') {
     const funded = cust.fundedCents > 0 || (await ensureFunded({ ...account, customer: cust }))
     if (funded) {
+      const started = Date.now()
       try {
         const token = await customerToken(cust.id)
         const { status, body } = await call(
@@ -69,20 +70,30 @@ export async function runFor<T>(
           { ...params, max_cost_cents: maxCostCents },
           { token, idempotencyKey: crypto.randomUUID() },
         )
-        if (status < 400 && body.ok) return { ok: true, data: body.data as T, settledBy: 'customer' }
-        // Provider-side failure (bad params, upstream down) is the same on
-        // either key: do not retry it on the operator's dime.
-        const code = String(((body.data as Record<string, unknown> | undefined)?.code ?? body.error ?? '') as string)
-        const customerSide = status === 401 || status === 402 || status === 409 || status === 422 || /customer|wallet|idempotency|budget/i.test(code)
+        if (status < 400 && body.ok) {
+          console.log('[customer] settled', JSON.stringify({ sub: account.sub, service, action, ms: Date.now() - started }))
+          return { ok: true, data: body.data as T, settledBy: 'customer' }
+        }
+        // A 4xx that is about the request itself (bad params, vendor says
+        // no) is the same on either key: do not retry it on the operator's
+        // dime. Anything about the wallet, the token, or the provider's own
+        // settlement plumbing (any 5xx) falls through to the operator so the
+        // user's step never fails for wallet reasons they cannot see.
+        const data = body.data as Record<string, unknown> | undefined
+        const code = String(data?.code ?? data?.error ?? body.error ?? '')
+        const customerSide =
+          status >= 500 || status === 401 || status === 402 || status === 409 || status === 422 || /customer|wallet|idempotency|budget/i.test(code)
+        console.log('[customer] outcome', JSON.stringify({ sub: account.sub, service, action, status, code, ms: Date.now() - started, fallback: customerSide }))
         if (!customerSide) return fail(status, body)
         if (status === 401) forgetToken(cust.id)
-        console.log('[customer] fell back', JSON.stringify({ sub: account.sub, service, action, status, code }))
       } catch (err) {
-        console.log('[customer] fell back', JSON.stringify({ sub: account.sub, service, action, error: String(err).slice(0, 120) }))
+        console.log('[customer] outcome', JSON.stringify({ sub: account.sub, service, action, error: String(err).slice(0, 120), ms: Date.now() - started, fallback: true }))
       }
     }
   }
+  const started = Date.now()
   const out = await run<T>(service, action, params, maxCostCents)
+  console.log('[operator] outcome', JSON.stringify({ sub: account.sub, service, action, ok: out.ok, code: out.ok ? undefined : (out.detail ?? out.code), ms: Date.now() - started }))
   return out.ok ? { ...out, settledBy: 'operator' } : out
 }
 
