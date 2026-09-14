@@ -38,6 +38,9 @@ export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WEL
 // Money. Balances are integer paise. Every new account starts with this.
 export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)
 export const UPI_ID = process.env.UPI_ID ?? ''
+// Recharges up to this much per account per day are credited the moment the
+// UTR is entered (and reviewed later on /admin); larger ones wait for approval.
+export const AUTO_CREDIT_INR_PER_DAY = Math.round(Number(process.env.AUTO_CREDIT_INR_PER_DAY ?? 49))
 export const UPI_NAME = process.env.UPI_NAME ?? APP_NAME
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 

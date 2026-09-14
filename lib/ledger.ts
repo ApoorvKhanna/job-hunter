@@ -5,7 +5,17 @@ import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 import { START_CREDIT_PAISE } from './env'
 
 export interface Entry { at: string; kind: 'credit' | 'debit'; paise: number; note: string }
-export interface Pending { id: string; at: string; paise: number; utr: string; status: 'pending' | 'approved' | 'rejected' }
+export interface Pending {
+  id: string
+  at: string
+  paise: number
+  utr: string
+  status: 'pending' | 'approved' | 'rejected' | 'reversed'
+  /** Credited the moment the reference was entered (under the daily cap). */
+  auto?: boolean
+  /** When it was approved / rejected / reversed. */
+  settledAt?: string
+}
 export interface CustomerRef {
   id: string
   status: 'provisioning' | 'ready' | 'failed'
@@ -150,6 +160,43 @@ export async function addPending(sub: string, paise: number, utr: string): Promi
   })
 }
 
+/** Paise auto-credited to this account in the last 24 hours. */
+export function autoCreditedToday(a: Account, now = Date.now()): number {
+  return a.pending
+    .filter((p) => p.auto && p.status === 'approved' && now - Date.parse(p.at) < 86400000)
+    .reduce((sum, p) => sum + p.paise, 0)
+}
+
+/** Record the reference AND credit it in one write (the instant path). */
+export async function addApproved(sub: string, paise: number, utr: string): Promise<{ account: Account; id: string }> {
+  const id = crypto.randomUUID()
+  const account = await mutate(sub, (a) => {
+    const at = new Date().toISOString()
+    a.pending.unshift({ id, at, paise, utr, status: 'approved', auto: true, settledAt: at })
+    a.pending = a.pending.slice(0, 50)
+    a.balancePaise += paise
+    a.entries.unshift({ at, kind: 'credit', paise, note: `UPI recharge (UTR ${utr})` })
+    a.entries = a.entries.slice(0, 200)
+  })
+  return { account, id }
+}
+
+/** Take an approved recharge back (a reference that turned out not to be a
+ *  payment). The balance never goes below zero; whatever was already spent
+ *  stays spent and is noted. */
+export async function reverseApproved(sub: string, id: string): Promise<Account> {
+  return mutate(sub, (a) => {
+    const p = a.pending.find((x) => x.id === id)
+    if (!p || p.status !== 'approved') throw new Error('not_approved')
+    p.status = 'reversed'
+    p.settledAt = new Date().toISOString()
+    const taken = Math.min(a.balancePaise, p.paise)
+    a.balancePaise -= taken
+    a.entries.unshift({ at: p.settledAt, kind: 'debit', paise: taken, note: `Recharge reversed (UTR ${p.utr})${taken < p.paise ? ', part already spent' : ''}` })
+    a.entries = a.entries.slice(0, 200)
+  })
+}
+
 /** Record (or refresh) the user's Vaaya customer on their account. */
 export async function setCustomer(sub: string, customer: CustomerRef): Promise<Account> {
   return mutate(sub, (a) => {
@@ -162,6 +209,7 @@ export async function settlePending(sub: string, id: string, status: 'approved' 
     const p = a.pending.find((x) => x.id === id)
     if (!p || p.status !== 'pending') throw new Error('not_pending')
     p.status = status
+    p.settledAt = new Date().toISOString()
     if (status === 'approved') {
       a.balancePaise += p.paise
       a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', paise: p.paise, note: `UPI recharge (UTR ${p.utr})` })

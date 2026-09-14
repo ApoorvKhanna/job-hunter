@@ -181,7 +181,7 @@ export default function Flow({
       {loading ? <p className="loading" role="status"><span className="spin" /> {loading}</p> : null}
 
       {error ? <div className="notice err">{error}</div> : null}
-      {recharge ? <Recharge need={recharge.need} balance={balance} upi={upi} onClose={() => setRecharge(null)} /> : null}
+      {recharge ? <Recharge need={recharge.need} balance={balance} upi={upi} onClose={() => setRecharge(null)} onCredited={setBalance} /> : null}
 
       {step === 0 && saved.jobs + saved.contacts + saved.emails > 0 ? (
         <a className="recap" href="/saved">

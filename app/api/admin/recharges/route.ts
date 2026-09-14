@@ -1,9 +1,12 @@
-// Operator only. GET lists pending UPI recharges; POST approves or rejects one.
+// Operator only. GET lists pending UPI recharges plus the last week's instant
+// credits for review; POST approves or rejects a pending one, or reverses an
+// approved one.
 import { list } from '@vercel/blob'
 import { NextResponse } from 'next/server'
 import { ADMIN_TOKEN } from '@/lib/env'
 import { topUpCustomer } from '@/lib/customer-flow'
-import { getAccount, settlePending } from '@/lib/ledger'
+import { getAccount, reverseApproved, settlePending } from '@/lib/ledger'
+import { sendCreditEmail } from '@/lib/notify'
 import { readJson } from '@/lib/route'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +19,10 @@ function authorized(req: Request): boolean {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ ok: false }, { status: 401 })
-  const rows: Array<{ sub: string; email: string; name: string; balance_paise: number; wallet: string | null; pending: Array<{ id: string; at: string; paise: number; utr: string }> }> = []
+  type Item = { id: string; at: string; paise: number; utr: string; status: string; auto?: boolean; settledAt?: string }
+  type Row = { sub: string; email: string; name: string; balance_paise: number; wallet: string | null; pending: Item[]; recent: Item[] }
+  const rows: Row[] = []
+  const weekAgo = Date.now() - 7 * 86400000
   let cursor: string | undefined
   let users = 0
   do {
@@ -27,7 +33,9 @@ export async function GET(req: Request) {
       const a = await getAccount(sub)
       if (!a) continue
       const pending = a.pending.filter((p) => p.status === 'pending')
-      if (pending.length) rows.push({ sub, email: a.email, name: a.name, balance_paise: a.balancePaise, wallet: a.customer?.status === 'ready' ? (a.customer.address ?? a.customer.id) : a.customer?.status ?? null, pending })
+      const recent = a.pending.filter((p) => p.auto && p.status === 'approved' && Date.parse(p.at) > weekAgo)
+      if (pending.length || recent.length)
+        rows.push({ sub, email: a.email, name: a.name, balance_paise: a.balancePaise, wallet: a.customer?.status === 'ready' ? (a.customer.address ?? a.customer.id) : a.customer?.status ?? null, pending, recent })
     }
     cursor = page.hasMore ? page.cursor : undefined
   } while (cursor)
@@ -36,12 +44,19 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!authorized(req)) return NextResponse.json({ ok: false }, { status: 401 })
-  const { sub, id, status } = await readJson<{ sub?: string; id?: string; status?: 'approved' | 'rejected' }>(req)
-  if (!sub || !id || (status !== 'approved' && status !== 'rejected')) return NextResponse.json({ ok: false, code: 'invalid' })
+  const { sub, id, status } = await readJson<{ sub?: string; id?: string; status?: 'approved' | 'rejected' | 'reversed' }>(req)
+  if (!sub || !id || (status !== 'approved' && status !== 'rejected' && status !== 'reversed')) return NextResponse.json({ ok: false, code: 'invalid' })
+  if (status === 'reversed') {
+    const a = await reverseApproved(sub, id)
+    return NextResponse.json({ ok: true, data: { balance_paise: a.balancePaise, customer: a.customer ?? null } })
+  }
   const a = await settlePending(sub, id, status)
   if (status === 'approved') {
-    const paise = a.pending.find((p) => p.id === id)?.paise ?? 0
-    if (paise > 0) await topUpCustomer(sub, paise, id)
+    const p = a.pending.find((x) => x.id === id)
+    if (p && p.paise > 0) {
+      await topUpCustomer(sub, p.paise, id)
+      await sendCreditEmail({ to: a.email, name: a.name, paise: p.paise, balancePaise: a.balancePaise, utr: p.utr })
+    }
   }
   return NextResponse.json({ ok: true, data: { balance_paise: a.balancePaise, customer: a.customer ?? null } })
 }
