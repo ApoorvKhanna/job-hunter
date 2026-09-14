@@ -4,7 +4,7 @@
 // turned away (`IP_GATE=block`). Existing accounts always sign in.
 //
 // Why credit-only by default: Indian mobile carriers and campus networks put
-// thousands of real people behind one address. Withholding the free ₹49 stops
+// thousands of real people behind one address. Withholding the welcome credit stops
 // the farm; blocking would lock out the second honest student in a hostel.
 import { createHash } from 'node:crypto'
 import { get, put } from '@vercel/blob'

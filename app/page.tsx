@@ -46,7 +46,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div>
           <span className="num">I</span><Icon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" />
           <b>Sign in</b>
-          Get ₹49 in granted credits. Your jobs, emails and drafts are saved to your account.
+          Get {inr(START_CREDIT_PAISE)} in granted credits. Your jobs, emails and drafts are saved to your account.
         </div>
         <div>
           <span className="num">II</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />

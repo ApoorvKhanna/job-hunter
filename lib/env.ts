@@ -32,7 +32,7 @@ export const JOBS_VIA_PROVIDER = process.env.JOBS_VIA_PROVIDER !== 'false'
 export const CUSTOMERS_ENABLED = process.env.VAAYA_CUSTOMERS_ENABLED === 'true'
 // Lifetime cap on what one customer wallet may ever be funded with, in cents.
 export const CUSTOMER_BUDGET_CENTS = Math.round(Number(process.env.CUSTOMER_BUDGET_CENTS ?? 500))
-// First funding, in cents. Mirrors the ₹49 welcome at the app's ₹1 ≈ 1¢ mapping.
+// First funding, in cents. Mirrors the welcome credit at the app's ₹1 ≈ 1¢ mapping.
 export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 49))
 
 // Money. Balances are integer paise. Every new account starts with this.
