@@ -14,6 +14,8 @@ export interface CustomerRef {
   fundedCents: number
   /** Funding operation ids we have submitted, so retries reuse them. */
   fundingOps: string[]
+  /** The label (sign-in email) the provider has been told for this wallet. */
+  label?: string
   updatedAt: string
 }
 export interface Account {

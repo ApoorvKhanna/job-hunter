@@ -57,10 +57,13 @@ async function owner(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unkn
 export const customersEnabled = () => CUSTOMERS_ENABLED && !!OWNER_API_KEY
 
 /** Create or fetch the customer for this external id. Idempotent on the server. */
-export async function ensureCustomer(externalId: string): Promise<Customer> {
+/** Create or fetch the user's customer. `label` is what the operator sees
+ *  for this wallet on the provider's side (we send the sign-in email). */
+export async function ensureCustomer(externalId: string, label?: string): Promise<Customer> {
   return (await owner('POST', '/api/v1/customers/ensure', {
     external_id: externalId,
     budget_cents: CUSTOMER_BUDGET_CENTS,
+    ...(label ? { label } : {}),
   })) as unknown as Customer
 }
 

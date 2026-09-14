@@ -18,25 +18,27 @@ import {
 } from './customer'
 import { type Account, type CustomerRef, getAccount, setCustomer } from './ledger'
 
-function ref(c: Customer, prev?: CustomerRef): CustomerRef {
+function ref(c: Customer, prev?: CustomerRef, label?: string): CustomerRef {
   return {
     id: c.id,
     status: c.status,
     address: c.wallet?.address ?? null,
     fundedCents: Math.max(prev?.fundedCents ?? 0, c.funded_cents ?? 0),
     fundingOps: prev?.fundingOps ?? [],
+    ...((label ?? prev?.label) ? { label: label ?? prev?.label } : {}),
     updatedAt: new Date().toISOString(),
   }
 }
 
-/** Login-time: make sure this user has a Vaaya customer. Never throws. */
-export async function attachCustomer(sub: string): Promise<CustomerRef | null> {
+/** Login-time: make sure this user has a Vaaya customer, labelled with their
+ *  sign-in email so the operator can tell wallets apart. Never throws. */
+export async function attachCustomer(sub: string, email?: string, force = false): Promise<CustomerRef | null> {
   if (!customersEnabled()) return null
   try {
     const existing = (await getAccount(sub))?.customer
-    if (existing?.status === 'ready') return existing
-    const c = await ensureCustomer(sub)
-    const next = ref(c, existing)
+    if (existing?.status === 'ready' && (!email || existing.label === email) && !force) return existing
+    const c = await ensureCustomer(sub, email)
+    const next = ref(c, existing, email)
     await setCustomer(sub, next)
     console.log('[customer] ensured', JSON.stringify({ sub, id: c.id, status: c.status, address: c.wallet?.address }))
     return next
