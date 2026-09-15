@@ -11,6 +11,7 @@ const ERRORS: Record<string, string> = {
   google_failed: 'Google did not confirm your account. Try again.',
   not_configured: 'Sign-in is not set up yet.',
   one_per_network: 'One account per network. Sign in with the Google account you first used here.',
+  blocked: 'This account is not able to use Job Hunter.',
 }
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

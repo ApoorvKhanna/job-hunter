@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { type Account, InsufficientBalance, debit, ensureAccount } from './ledger'
 import { PRICE_PAISE, type Step } from './prices'
 import type { ProviderResult } from './provider'
+import { isBlocked } from './blocks'
 import { readSession } from './session'
 
 export type ApiOk<T> = { ok: true; data: T; balance_paise: number; charged_paise: number }
@@ -43,6 +44,7 @@ export async function paidStep<T>(
 ): Promise<NextResponse> {
   const session = await readSession()
   if (!session) return json({ ok: false, code: 'signed_out', message: 'Please sign in again.' }, 401)
+  if (await isBlocked('sub', session.sub)) return json({ ok: false, code: 'blocked', message: 'This account has been suspended.' }, 403)
   const account = await ensureAccount(session)
   const price = PRICE_PAISE[step]
   if (account.balancePaise < price) {

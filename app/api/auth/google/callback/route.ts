@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { APP_URL, START_CREDIT_PAISE } from '@/lib/env'
 import { exchangeCode } from '@/lib/google'
 import { attachCustomer } from '@/lib/customer-flow'
+import { isBlocked } from '@/lib/blocks'
 import { IP_GATE, claimNetwork, clientIp, networkKey } from '@/lib/ipgate'
 import { ensureAccount, getAccount } from '@/lib/ledger'
 import { STATE_COOKIE, sessionCookie } from '@/lib/session'
@@ -24,6 +25,11 @@ export async function GET(req: Request) {
   if (!code || !state || !expected || expected !== state) return bounce('state_mismatch')
   const who = await exchangeCode(code)
   if (!who) return bounce('google_failed')
+  const ipNow = clientIp(req)
+  if ((await isBlocked('sub', who.sub)) || (await isBlocked('network', ipNow ? networkKey(ipNow) : null))) {
+    console.log('[block] sign-in refused', JSON.stringify({ sub: who.sub }))
+    return bounce('blocked')
+  }
   // One welcome credit per network. Only a brand-new account is judged; an
   // existing account signs in from anywhere.
   let welcomePaise = START_CREDIT_PAISE

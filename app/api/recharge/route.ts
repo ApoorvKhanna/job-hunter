@@ -2,6 +2,7 @@
 // unused, and the amount is inside the daily instant cap, the credit lands
 // now and they get an email; otherwise it waits for an operator on /admin.
 import { NextResponse } from 'next/server'
+import { isBlocked } from '@/lib/blocks'
 import { topUpCustomer } from '@/lib/customer-flow'
 import { AUTO_CREDIT_INR_PER_DAY } from '@/lib/env'
 import { addApproved, addPending, autoCreditedToday, ensureAccount } from '@/lib/ledger'
@@ -17,6 +18,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: Request) {
   const session = await readSession()
   if (!session) return NextResponse.json({ ok: false, code: 'signed_out' }, { status: 401 })
+  if (await isBlocked('sub', session.sub)) return NextResponse.json({ ok: false, code: 'blocked', message: 'This account has been suspended.' }, { status: 403 })
   const { inr, utr } = await readJson<{ inr?: number; utr?: string }>(req)
   const amount = Number(inr)
   if (!(RECHARGE_OPTIONS_INR as readonly number[]).includes(amount)) return NextResponse.json({ ok: false, code: 'invalid', message: 'Pick an amount.' })
