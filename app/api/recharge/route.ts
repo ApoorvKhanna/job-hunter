@@ -34,7 +34,11 @@ export async function POST(req: Request) {
   const account = await ensureAccount(session)
   const paise = amount * 100
   const capPaise = AUTO_CREDIT_INR_PER_DAY * 100
-  const instant = capPaise > 0 && paise <= capPaise && autoCreditedToday(account) + paise <= capPaise
+  // No instant credit for an account that has ever had a recharge reversed
+  // or rejected: those references were not payments, so the next one waits
+  // for a human.
+  const burned = account.pending.some((p) => p.status === 'reversed' || p.status === 'rejected')
+  const instant = !burned && capPaise > 0 && paise <= capPaise && autoCreditedToday(account) + paise <= capPaise
 
   if (!instant) {
     const a = await addPending(session.sub, paise, check.utr)
