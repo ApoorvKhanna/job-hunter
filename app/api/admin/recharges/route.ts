@@ -4,7 +4,6 @@
 import { list } from '@vercel/blob'
 import { NextResponse } from 'next/server'
 import { ADMIN_TOKEN } from '@/lib/env'
-import { topUpCustomer } from '@/lib/customer-flow'
 import { getAccount, reverseApproved, settlePending } from '@/lib/ledger'
 import { sendCreditEmail } from '@/lib/notify'
 import { readJson } from '@/lib/route'
@@ -73,7 +72,6 @@ export async function POST(req: Request) {
   if (status === 'approved') {
     const p = a.pending.find((x) => x.id === id)
     if (p && p.paise > 0) {
-      await topUpCustomer(sub, p.paise, id)
       await sendCreditEmail({ to: a.email, name: a.name, paise: p.paise, balancePaise: a.balancePaise, utr: p.utr })
     }
   }

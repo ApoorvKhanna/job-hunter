@@ -3,7 +3,6 @@
 // now and they get an email; otherwise it waits for an operator on /admin.
 import { NextResponse } from 'next/server'
 import { isBlocked } from '@/lib/blocks'
-import { topUpCustomer } from '@/lib/customer-flow'
 import { AUTO_CREDIT_INR_PER_DAY } from '@/lib/env'
 import { addApproved, addPending, autoCreditedToday, ensureAccount } from '@/lib/ledger'
 import { sendCreditEmail } from '@/lib/notify'
@@ -46,8 +45,10 @@ export async function POST(req: Request) {
   }
 
   const { account: credited, id } = await addApproved(session.sub, paise, check.utr)
-  console.log('[recharge] instant credit', JSON.stringify({ sub: session.sub, paise, utr: check.utr }))
-  await topUpCustomer(session.sub, paise, id)
+  console.log('[recharge] instant credit', JSON.stringify({ sub: session.sub, paise, utr: check.utr, id }))
+  // Rupee credit only. The provider wallet keeps its welcome funding; the
+  // operator key covers any call the wallet cannot, so a recharge (verified
+  // or not) never moves treasury money.
   await sendCreditEmail({ to: credited.email, name: credited.name, paise, balancePaise: credited.balancePaise, utr: check.utr })
   return NextResponse.json({ ok: true, data: { status: 'approved', balance_paise: credited.balancePaise, pending: 0 } })
 }
