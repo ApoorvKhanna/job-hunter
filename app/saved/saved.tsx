@@ -134,7 +134,9 @@ function Empty({ what, filtered }: { what: Tab; filtered: boolean }) {
   const [head, hint] = EMPTY[what][filtered ? 'filtered' : 'none']
   return (
     <p className="muted">
-      <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{head}</b> {hint}{filtered ? null : <> <a href="/app">Find jobs</a></>}
+      <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{head}</b>
+      <br />
+      {hint}{filtered ? null : <> · <a href="/app">Find jobs</a></>}
     </p>
   )
 }

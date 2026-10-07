@@ -1,9 +1,10 @@
 // Look up the email for one of the run's contacts. A person with no email on
 // file does not use up the run's email allowance; a person already looked up
 // comes back free.
+import { companyKey, linkedinKey } from '@/lib/format'
 import { runFor } from '@/lib/provider'
 import { caller, readJson, runStepResponse } from '@/lib/route'
-import { type Emails, linkedinKey } from '@/lib/runs'
+import type { Emails } from '@/lib/runs'
 import { saveItems } from '@/lib/saved'
 import type { Person } from '@/lib/types'
 
@@ -26,16 +27,17 @@ export async function POST(req: Request) {
       runId: run_id,
       kind: 'emails',
       check: (r) => {
-        for (const [jobId, people] of Object.entries(r.contacts)) {
+        for (const [company, people] of Object.entries(r.contacts)) {
           const person = people.find((p) => linkedinKey(p.linkedin_url) === key)
           if (person) {
-            found = { person, company: r.jobs.find((j) => j.id === jobId)?.company ?? '' }
+            found = { person, company: r.jobs.find((j) => companyKey(j.company) === company)?.company ?? '' }
             return null
           }
         }
         return 'That person is not one of this search’s contacts'
       },
       cached: (r) => r.emails[key],
+      key: () => key,
       work: async () => {
         const out = await runFor<{ profile?: { email?: string[]; work_email?: string[]; personal_email?: string[] } }>(
           account,

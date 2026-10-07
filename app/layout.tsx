@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { MAX_JOBS, RUN_CENTS, usd } from '@/lib/prices'
 import { Cormorant_Garamond, Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 
@@ -8,7 +9,7 @@ const serif = Cormorant_Garamond({ variable: '--font-serif', subsets: ['latin'],
 
 export const metadata: Metadata = {
   title: 'Job Hunter',
-  description: 'Upload your resume and see fresh job postings that fit, the people hiring at each company, their email, and a first draft written from your experience. $2.50 a run, free if no jobs are found',
+  description: `Upload your resume and see up to ${MAX_JOBS} fresh job postings that fit, the people hiring at each company, their email, and a first draft written from your experience. ${usd(RUN_CENTS)} a run, free if no jobs are found`,
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

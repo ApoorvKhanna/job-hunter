@@ -2,7 +2,7 @@
 // read with the ETag, write with ifMatch, retry on a precondition failure.
 // Amounts are integer US cents. Nothing here ever goes negative.
 import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
-import { PARSES_PER_DAY, START_CREDIT_CENTS } from './env'
+import { EMPTY_SEARCHES_PER_DAY, PARSES_PER_DAY, START_CREDIT_CENTS } from './env'
 
 export interface Entry { at: string; kind: 'credit' | 'debit'; cents: number; note: string }
 export interface CustomerRef {
@@ -28,6 +28,8 @@ export interface Account {
   topUps: string[]
   /** When this account's recent free resume reads ran (last 24 hours). */
   parses?: string[]
+  /** When this account's recent searches found nothing (last 24 hours). */
+  emptySearches?: string[]
   /** The user's own Vaaya identity + x402 wallet, when managed customers are on. */
   customer?: CustomerRef
   /** Hash of the network the account was created from (see ipgate.ts). */
@@ -138,14 +140,14 @@ export async function credit(sub: string, cents: number, note: string): Promise<
 }
 
 /** Credit a paid Stripe Checkout session. The webhook and the return page
- *  both call this, so it credits each session exactly once. */
+ *  both call this, so it credits each session exactly once. The list of
+ *  credited sessions is never trimmed: a trimmed id could credit again. */
 export async function creditTopUp(sub: string, sessionId: string, cents: number): Promise<{ account: Account; credited: boolean }> {
   let credited = false
   const account = await mutate(sub, (a) => {
     a.topUps ??= []
     if (a.topUps.includes(sessionId)) return
     a.topUps.unshift(sessionId)
-    a.topUps = a.topUps.slice(0, 200)
     a.balanceCents += cents
     a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', cents, note: 'Card top-up' })
     a.entries = a.entries.slice(0, 200)
@@ -154,15 +156,34 @@ export async function creditTopUp(sub: string, sessionId: string, cents: number)
   return { account, credited }
 }
 
-/** Count one free resume read. False when today's allowance is spent. */
+const DAY = 86400000
+const recent = (list: string[] | undefined, now: number) => (list ?? []).filter((t) => now - Date.parse(t) < DAY)
+
+/** Count one free resume read. False when today's allowance is spent; a
+ *  refused read writes nothing. */
 export async function takeParse(sub: string, now = Date.now()): Promise<boolean> {
+  const current = await getAccount(sub)
+  if (current && recent(current.parses, now).length >= PARSES_PER_DAY) return false
   let allowed = false
   await mutate(sub, (a) => {
-    const recent = (a.parses ?? []).filter((t) => now - Date.parse(t) < 86400000)
-    allowed = recent.length < PARSES_PER_DAY
-    a.parses = allowed ? [new Date(now).toISOString(), ...recent] : recent
+    const list = recent(a.parses, now)
+    allowed = list.length < PARSES_PER_DAY
+    if (allowed) a.parses = [new Date(now).toISOString(), ...list]
   })
   return allowed
+}
+
+/** Whether this account may run another search today. Searches that find
+ *  nothing are free to the user but not to the operator, so they are capped. */
+export function canSearch(a: Account, now = Date.now()): boolean {
+  return recent(a.emptySearches, now).length < EMPTY_SEARCHES_PER_DAY
+}
+
+/** Record a search that found nothing (or failed upstream). */
+export async function noteEmptySearch(sub: string, now = Date.now()): Promise<void> {
+  await mutate(sub, (a) => {
+    a.emptySearches = [new Date(now).toISOString(), ...recent(a.emptySearches, now)].slice(0, 100)
+  })
 }
 
 /** Record (or refresh) the user's Vaaya customer on their account. */

@@ -15,6 +15,8 @@ export const STATE_COOKIE = 'jh_state'
 const SESSION_MAX_AGE = 90 * 24 * 60 * 60
 
 async function key(): Promise<CryptoKey> {
+  // A short or missing secret would make every cookie forgeable: refuse.
+  if (SESSION_SECRET.length < 32) throw new Error('SESSION_SECRET must be at least 32 characters')
   const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(SESSION_SECRET))
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt'])
 }

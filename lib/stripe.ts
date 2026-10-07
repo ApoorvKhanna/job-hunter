@@ -4,12 +4,18 @@
 // webhook, and again on the return page in case the webhook is slow. Both
 // paths go through creditTopUp, which credits a session once.
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { APP_NAME, APP_URL, STRIPE_SECRET_KEY } from './env'
-import { creditTopUp } from './ledger'
+import { APP_NAME, APP_URL, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } from './env'
+import { creditTopUp, getAccount } from './ledger'
 
 const API = 'https://api.stripe.com/v1'
 
-export const cardsEnabled = () => !!STRIPE_SECRET_KEY
+// Both keys, or top-ups stay off: without the webhook secret every webhook
+// would be rejected and payments would credit only via the return page.
+export const cardsEnabled = () => !!STRIPE_SECRET_KEY && !!STRIPE_WEBHOOK_SECRET
+
+/** Tags this app's sessions, so other payments on the same Stripe account are
+ *  never mistaken for a top-up. */
+const APP_TAG = 'job-hunter'
 
 export interface CheckoutSession {
   id: string
@@ -46,6 +52,7 @@ export async function createCheckout(who: { sub: string; email: string }, cents:
     client_reference_id: who.sub,
     customer_email: who.email,
     'metadata[sub]': who.sub,
+    'metadata[app]': APP_TAG,
     'line_items[0][quantity]': '1',
     'line_items[0][price_data][currency]': 'usd',
     'line_items[0][price_data][unit_amount]': String(cents),
@@ -59,11 +66,21 @@ export async function getCheckout(id: string): Promise<CheckoutSession | null> {
   return stripe<CheckoutSession>('GET', `/checkout/sessions/${encodeURIComponent(id)}`)
 }
 
-/** Credit a paid session to the account that started it. Safe to repeat. */
+/** The account a session belongs to, if it is one of this app's top-ups. */
+export function topUpOwner(session: CheckoutSession): string | null {
+  return session.metadata?.app === APP_TAG && session.metadata?.sub ? session.metadata.sub : null
+}
+
+/** Credit a paid top-up session to the account that started it. Safe to
+ *  repeat. Sessions that are not this app's, or not paid in USD, are ignored. */
 export async function settleCheckout(session: CheckoutSession): Promise<{ sub: string; cents: number; credited: boolean } | null> {
-  if (session.payment_status !== 'paid' || session.currency !== 'usd' || !session.amount_total) return null
-  const sub = session.metadata?.sub || session.client_reference_id
-  if (!sub) return null
+  const sub = topUpOwner(session)
+  if (!sub || session.payment_status !== 'paid' || session.currency !== 'usd' || !session.amount_total) return null
+  if (!(await getAccount(sub))) {
+    // Nothing to credit; retrying will not change that.
+    console.error('[topup] no account for a paid session', JSON.stringify({ sub, session: session.id }))
+    return null
+  }
   const { credited } = await creditTopUp(sub, session.id, session.amount_total)
   if (credited) console.log('[topup]', JSON.stringify({ sub, cents: session.amount_total, session: session.id }))
   return { sub, cents: session.amount_total, credited }

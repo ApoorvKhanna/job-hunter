@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import AddFunds from '../add-funds'
 import Header from '../header'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
-import { plural, postedOn } from '@/lib/format'
+import { companyKey, linkedinKey, plural, postedOn } from '@/lib/format'
 import { type AllowanceKind, MAX_SEARCH_TITLES, RUN_ALLOWANCE, RUN_CENTS, usd } from '@/lib/prices'
 import type { Job, Person, Profile } from '@/lib/types'
 import { VARIANT_LABELS, type Variant } from '@/lib/variants'
@@ -67,8 +67,11 @@ export default function Flow({
   const [job, setJob] = useState<Job | null>(null)
   const [people, setPeople] = useState<Record<string, Person[]>>({})
   const [emails, setEmails] = useState<Record<string, Emails>>({})
+  const [noEmail, setNoEmail] = useState<Record<string, true>>({})
   const [person, setPerson] = useState<Person | null>(null)
   const [note, setNote] = useState<string | null>(null)
+
+  const out = (kind: AllowanceKind) => (left ? left[kind] === 0 : false)
 
   useEffect(() => {
     try {
@@ -129,39 +132,65 @@ export default function Flow({
       setLeft(data.left)
       setPeople({})
       setEmails({})
+      setNoEmail({})
       setJob(null)
       setPerson(null)
       setNote(null)
       setStep(2)
     }
   }
-  // Step 2 → 3
+  // Step 2 → 3. Contacts are kept per company. A lookup that finds nobody, or
+  // a run with no contact lookups left, still opens step 3 so the user can
+  // draft without a name.
   async function pickJob(j: Job) {
     if (!runId) return
+    const ck = companyKey(j.company)
     setJob(j)
     setNote(null)
     setPerson(null)
-    if (people[j.id]) {
+    if (people[ck]) {
+      setStep(3)
+      return
+    }
+    if (out('contacts')) {
+      setInfo('No contact lookups left in this run. You can still draft an email')
       setStep(3)
       return
     }
     setBusy('people')
-    const data = settle(await post<Person[]>('/api/contact', { run_id: runId, job_id: j.id }))
+    const r = await post<Person[]>('/api/contact', { run_id: runId, job_id: j.id })
     setBusy(null)
+    if (!r.ok && (r.code === 'miss' || r.code === 'allowance_spent')) {
+      if (r.left) setLeft(r.left)
+      if (r.code === 'miss') setPeople((m) => ({ ...m, [ck]: [] }))
+      setError(null)
+      setInfo(r.message)
+      setStep(3)
+      return
+    }
+    const data = settle(r)
     if (data) {
-      setPeople((m) => ({ ...m, [j.id]: data }))
+      setPeople((m) => ({ ...m, [ck]: data }))
       setStep(3)
     }
   }
   async function reveal(p: Person) {
     if (!runId) return
+    const k = linkedinKey(p.linkedin_url)
     setBusy(`email:${p.linkedin_url}`)
-    const data = settle(await post<Emails>('/api/email', { run_id: runId, linkedin_url: p.linkedin_url }))
+    const r = await post<Emails>('/api/email', { run_id: runId, linkedin_url: p.linkedin_url })
     setBusy(null)
-    if (data) setEmails((m) => ({ ...m, [p.linkedin_url]: data }))
+    if (!r.ok && r.code === 'miss') {
+      if (r.left) setLeft(r.left)
+      setNoEmail((m) => ({ ...m, [k]: true }))
+      return
+    }
+    const data = settle(r)
+    if (data) setEmails((m) => ({ ...m, [k]: data }))
   }
+  const emailsOf = (p: Person | null) => (p ? emails[linkedinKey(p.linkedin_url)] : undefined)
   const toOf = (p: Person | null) => {
-    const e = p ? emails[p.linkedin_url] : undefined
+    const e = emailsOf(p)
     return e ? ([...e.work, ...e.personal][0] ?? null) : null
   }
   // Step 3 → 4
@@ -190,14 +219,13 @@ export default function Flow({
     if (busy === 'jobs') return 'Finding jobs that match your search…'
     if (busy === 'people') return `Finding contacts at ${job?.company ?? 'the company'}…`
     if (busy.startsWith('email:')) {
-      const p = job ? people[job.id]?.find((x) => `email:${x.linkedin_url}` === busy) : undefined
+      const p = job ? people[companyKey(job.company)]?.find((x) => `email:${x.linkedin_url}` === busy) : undefined
       return p ? `Looking for ${p.name.split(' ')[0]}’s email…` : 'Looking for an email…'
     }
     return 'Drafting your email…'
   })()
 
-  const contactsAt = job ? (people[job.id] ?? []) : []
-  const out = (kind: AllowanceKind) => (left ? left[kind] === 0 : false)
+  const contactsAt = job ? (people[companyKey(job.company)] ?? []) : []
 
   return (
     <main className="wrap">
@@ -287,11 +315,10 @@ export default function Flow({
               <div className="row between">
                 <div>
                   <div className="job-title"><a href={j.url} target="_blank" rel="noreferrer">{j.title}</a></div>
-                  <div className="meta"><b>{j.company}</b>{j.location ? ` · ${countryFlag(profile?.country_code ?? '')} ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · Posted {postedOn(j.posted)}</div>
-                  {j.hiring_team.length ? <div className="small muted">On the posting: {j.hiring_team.map((h) => h.name).join(', ')}</div> : null}
+                  <div className="meta"><b>{j.company}</b>{j.location ? ` · ${countryFlag(j.country ?? '')} ${j.location}` : ''}{j.remote ? ' · remote' : ''}{j.salary ? ` · ${j.salary}` : ''} · Posted {postedOn(j.posted)}</div>
                 </div>
-                <button className="btn sm" onClick={() => pickJob(j)} disabled={busy !== null || (!people[j.id] && out('contacts'))}>
-                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} {people[j.id] ? 'Show contacts' : 'Find contacts'}
+                <button className="btn sm" onClick={() => pickJob(j)} disabled={busy !== null}>
+                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} {people[companyKey(j.company)] ? 'Show contacts' : out('contacts') ? 'Draft email' : 'Find contacts'}
                 </button>
               </div>
             </div>
@@ -307,18 +334,20 @@ export default function Flow({
           <h2>Contacts at {job.company}</h2>
           <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Choose a contact to look up their email or draft a message</p>
           <RunLeft left={left} />
-          {contactsAt.length === 0 ? <p className="muted">No managers or recruiters found at this company. You can still draft an email without a contact</p> : null}
+          {contactsAt.length === 0 && !info ? <p className="muted">No contacts to show. You can still draft an email without a contact</p> : null}
           {contactsAt.length > 0 ? (
             <div className="card">
               {contactsAt.map((p) => {
-                const e = emails[p.linkedin_url]
-                const canReveal = p.has_work_email || p.has_personal_email
+                const e = emailsOf(p)
+                const missed = !!noEmail[linkedinKey(p.linkedin_url)]
+                const canReveal = (p.has_work_email || p.has_personal_email) && !missed
                 return (
                   <div className="person" key={p.linkedin_url}>
                     <div>
                       <div><a href={p.linkedin_url} target="_blank" rel="noreferrer">{p.name}</a></div>
                       <div className="meta">{p.title}</div>
                       {e ? <div className="email">{[...e.work, ...e.personal].join(' · ')}</div> : null}
+                      {missed ? <div className="small muted">No email on file</div> : null}
                     </div>
                     <div className="row" style={{ flexShrink: 0 }}>
                       {p.linkedin_url ? <a className="btn ghost sm" href={p.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
@@ -346,13 +375,13 @@ export default function Flow({
       {step === 4 && job && note ? (
         <section>
           <h2>Your email draft{person ? ` for ${person.name.split(' ')[0]}` : ''}</h2>
-          <p className="small muted">About: {job.title} at {job.company}{person && toOf(person) ? <> · To: <span className="email">{toOf(person)}</span></> : null}{person?.linkedin_url ? <> · <a href={person.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a></> : null}</p>
+          <p className="small muted">About: {job.title} at {job.company}{toOf(person) ? <> · To: <span className="email">{toOf(person)}</span></> : null}{person?.linkedin_url ? <> · <a href={person.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a></> : null}</p>
           <p className="small muted">Review the details and personalize the draft before sending</p>
           <pre className="note">{note}</pre>
           <div className="row">
             <CopyDraft text={note} />
-            {person && emails[person.linkedin_url]?.work[0] ? (
-              <a className="btn ghost" href={`mailto:${emails[person.linkedin_url].work[0]}?subject=${encodeURIComponent(note.split('\n')[0].replace(/^Subject:\s*/i, ''))}&body=${encodeURIComponent(note.split('\n').slice(2).join('\n'))}`}>Open in mail</a>
+            {toOf(person) ? (
+              <a className="btn ghost" href={`mailto:${toOf(person)}?subject=${encodeURIComponent(note.split('\n')[0].replace(/^Subject:\s*/i, ''))}&body=${encodeURIComponent(note.split('\n').slice(2).join('\n'))}`}>Open in mail</a>
             ) : null}
             <button className="btn ghost sm" onClick={() => setStep(3)}>Choose another contact</button>
             <button className="btn ghost sm" onClick={() => setStep(2)}>Choose another job</button>

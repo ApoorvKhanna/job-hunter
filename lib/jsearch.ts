@@ -93,15 +93,13 @@ function toJob(j: RawJob): Job | null {
     title: j.job_title,
     company: j.employer_name,
     company_domain: domainOf(j.employer_website),
-    company_linkedin: null,
+    country: j.job_country && /^[A-Z]{2}$/i.test(j.job_country) ? j.job_country.toUpperCase() : null,
     location: city || j.job_country || '',
     remote: !!j.job_is_remote,
     salary: money(j),
-    seniority: null,
     posted,
     url: j.job_apply_link ?? '',
     description: (j.job_description ?? '').slice(0, 4000),
-    hiring_team: [],
   }
 }
 

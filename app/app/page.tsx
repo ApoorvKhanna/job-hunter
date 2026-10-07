@@ -3,7 +3,7 @@ import { ensureAccount } from '@/lib/ledger'
 import { usd } from '@/lib/prices'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
-import { cardsEnabled, getCheckout, settleCheckout } from '@/lib/stripe'
+import { cardsEnabled, getCheckout, settleCheckout, topUpOwner } from '@/lib/stripe'
 import Flow from './flow'
 
 export const dynamic = 'force-dynamic'
@@ -19,8 +19,7 @@ export default async function AppPage({ searchParams }: { searchParams: Promise<
   const { topup } = await searchParams
   if (topup && cardsEnabled()) {
     const checkout = await getCheckout(topup)
-    const owner = checkout?.metadata?.sub || checkout?.client_reference_id
-    if (checkout && owner === session.sub) {
+    if (checkout && topUpOwner(checkout) === session.sub) {
       const settled = await settleCheckout(checkout).catch((err) => {
         console.error('[topup] return credit failed', err)
         return null

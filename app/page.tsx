@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
-import { GOOGLE_CLIENT_ID, START_CREDIT_CENTS } from '@/lib/env'
-import { RUN_ALLOWANCE, RUN_CENTS, usd } from '@/lib/prices'
+import { GOOGLE_CLIENT_ID, START_CREDIT_CENTS, missingConfig } from '@/lib/env'
+import { MAX_JOBS, RUN_ALLOWANCE, RUN_CENTS, usd } from '@/lib/prices'
 import { readSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -18,6 +18,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const session = await readSession()
   if (session) redirect('/app')
   const { error } = await searchParams
+  const missing = missingConfig()
   return (
     <main className="landing">
       <nav className="nav">
@@ -32,7 +33,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             Upload your resume. Get fresh job matches, contacts at hiring companies, and an email draft based on your
             experience. {usd(RUN_CENTS)} a run, charged only when the search finds jobs
           </p>
-          {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error})`}</div> : null}
+          {missing.length ? <div className="notice err">Setup needed: set {missing.join(', ')} (see the README)</div> : null}
+          {error && !missing.length ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error})`}</div> : null}
           <p style={{ margin: '18px 0 8px' }}>
             <a className="btn" href="/api/auth/google/start" aria-disabled={!GOOGLE_CLIENT_ID}>
               <GoogleMark /> Continue with Google
@@ -55,7 +57,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div>
           <span className="num">II</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
           <b>See matching jobs</b>
-          Edit titles, country, remote and how recent. Up to 10 postings, newest first
+          Edit titles, country, remote and how recent. Up to {MAX_JOBS} postings, newest first
           <span className="price">{usd(RUN_CENTS)} a run</span>
         </div>
         <div>

@@ -14,10 +14,8 @@ export const maxDuration = 60
 const SYSTEM = `You turn a resume into a job-search profile. Reply with ONLY a JSON object, no prose, shaped exactly:
 {"headline": string (one line, who this person is),
  "titles": string[] (2 to 3 job titles to search postings for, phrased the way employers post them, most likely first),
- "seniority": "junior" | "mid_level" | "senior" | "staff" | "c_level" | null,
  "country_code": string (ISO 3166 two-letter code of where they live or want to work; "US" if unclear),
  "remote": boolean | null (true only if the resume signals remote preference),
- "technologies": string[] (up to 8 concrete tools, languages or platforms),
  "years": number | null (years of relevant experience)}`
 
 export async function POST(req: Request) {
@@ -38,10 +36,8 @@ export async function POST(req: Request) {
   const data: Profile = {
     headline: String(p.headline ?? ''),
     titles: p.titles.slice(0, MAX_SEARCH_TITLES).map(String),
-    seniority: p.seniority ?? null,
     country_code: (p.country_code || 'US').toUpperCase().slice(0, 2),
     remote: typeof p.remote === 'boolean' ? p.remote : null,
-    technologies: (p.technologies ?? []).slice(0, 8).map(String),
     years: typeof p.years === 'number' ? p.years : null,
   }
   return NextResponse.json({ ok: true, data })

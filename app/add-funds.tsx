@@ -44,11 +44,11 @@ export default function AddFunds({ need, balance, cardsEnabled, onClose }: { nee
         <>
           <div className="chips" style={{ margin: '12px 0' }}>
             {TOP_UP_USD.map((v) => (
-              <button key={v} className={`chip${amount === v ? ' on' : ''}`} onClick={() => setAmount(v)}>${v}</button>
+              <button key={v} className={`chip${amount === v ? ' on' : ''}`} onClick={() => setAmount(v)}>{usd(v * 100)}</button>
             ))}
           </div>
           <button className="btn" onClick={pay} disabled={busy}>
-            {busy ? <span className="spin" /> : null} Pay ${amount} by card
+            {busy ? <span className="spin" /> : null} Pay {usd(amount * 100)} by card
           </button>
           {msg ? <div className="notice err">{msg}</div> : null}
         </>

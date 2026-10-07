@@ -3,8 +3,12 @@
 //   1. routed people-finder: "managers, founders, recruiters at X"
 //   2. ContactOut people search, broad leadership titles, when the first
 //      rung found fewer than two people
-import { run, runFor } from '@/lib/provider'
+// Contacts are kept per company, so a second posting at the same company
+// shows the same people for free. If both rungs fail upstream, the step
+// fails instead of reporting that nobody was found.
+import { companyKey, linkedinKey } from '@/lib/format'
 import type { Account } from '@/lib/ledger'
+import { run, runFor } from '@/lib/provider'
 import { caller, readJson, runStepResponse } from '@/lib/route'
 import type { Person } from '@/lib/types'
 
@@ -49,11 +53,11 @@ function rank(p: Person, fn: string): number {
   return s
 }
 
-async function rungFind(company: string, domain: string | null, jobTitle: string): Promise<Person[]> {
+async function rungFind(company: string, domain: string | null, jobTitle: string): Promise<Person[] | null> {
   const fn = functionWord(jobTitle)
   const q = `${fn} managers, heads of ${fn}, founders or technical recruiters at ${company}${domain ? ` (${domain})` : ''}`
   const out = await run<{ rows?: FindRow[] }>('vaaya', 'onefind', { query: q }, 2)
-  if (!out.ok) return []
+  if (!out.ok) return null
   return (out.data.rows ?? [])
     .filter((r) => r.name && r.linkedin && /linkedin\.com\/in\//i.test(r.linkedin) && sameCompany(r.company, company))
     .map((r) => ({
@@ -67,7 +71,7 @@ async function rungFind(company: string, domain: string | null, jobTitle: string
     }))
 }
 
-async function rungContactOut(account: Account, company: string, jobTitle: string): Promise<Person[]> {
+async function rungContactOut(account: Account, company: string, jobTitle: string): Promise<Person[] | null> {
   const fn = functionWord(jobTitle)
   const titles = `Founder OR CEO OR CTO OR Co-Founder OR Head OR Director OR VP OR Manager OR Recruiter OR Talent OR HR OR ${fn}`
   const out = await runFor<{ profiles?: Record<string, Record<string, unknown>> }>(
@@ -77,7 +81,7 @@ async function rungContactOut(account: Account, company: string, jobTitle: strin
     { job_title: [titles], company: [company], current_titles_only: true, company_filter: 'current', page_size: 5 },
     5,
   )
-  if (!out.ok) return []
+  if (!out.ok) return null
   return Object.entries(out.data.profiles ?? {})
     .filter(([, p]) => sameCompany(((p.company as { name?: string } | undefined)?.name) ?? null, company))
     .map(([url, p]) => {
@@ -100,29 +104,37 @@ export async function POST(req: Request) {
   const who = await caller()
   if ('response' in who) return who.response
   const account = who.account
+  let company = ''
   return runStepResponse<Person[]>({
     runId: run_id,
     kind: 'contacts',
-    check: (r) => (r.jobs.some((j) => j.id === job_id) ? null : 'That job is not part of this search'),
-    cached: (r) => (r.contacts[job_id]?.length ? r.contacts[job_id] : undefined),
+    check: (r) => {
+      const job = r.jobs.find((j) => j.id === job_id)
+      if (!job) return 'That job is not part of this search'
+      company = companyKey(job.company)
+      return null
+    },
+    cached: (r) => (r.contacts[company]?.length ? r.contacts[company] : undefined),
+    key: () => company,
     work: async (r) => {
       const job = r.jobs.find((j) => j.id === job_id)
       if (!job) return null
       return findPeople(account, job.company, job.company_domain, job.title)
     },
     save: (r, people) => {
-      r.contacts[job_id] = people
+      r.contacts[company] = people
     },
     miss: 'No managers or recruiters found at this company yet. This lookup did not use your run. You can still draft an email without a contact',
   })
 }
 
+/** Null when nobody was found; throws when every rung failed upstream. */
 async function findPeople(account: Account, company: string, domain: string | null, title: string): Promise<Person[] | null> {
   const seen = new Set<string>()
   const people: Person[] = []
-  const add = (rows: Person[]) => {
-    for (const p of rows) {
-      const k = p.linkedin_url.toLowerCase().replace(/\/+$/, '')
+  const add = (rows: Person[] | null) => {
+    for (const p of rows ?? []) {
+      const k = linkedinKey(p.linkedin_url)
       if (!seen.has(k)) {
         seen.add(k)
         people.push(p)
@@ -130,11 +142,19 @@ async function findPeople(account: Account, company: string, domain: string | nu
     }
   }
   const t0 = Date.now()
-  add(await rungFind(company, domain, title))
+  const found = await rungFind(company, domain, title)
+  add(found)
   const t1 = Date.now()
-  if (people.length < 2) add(await rungContactOut(account, company, title))
-  console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: people.length < 2 ? Date.now() - t1 : 0, people: people.length }))
-  if (people.length === 0) return null
+  let fallback: Person[] | null | undefined
+  if (people.length < 2) {
+    fallback = await rungContactOut(account, company, title)
+    add(fallback)
+  }
+  console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: fallback === undefined ? 0 : Date.now() - t1, people: people.length }))
+  if (people.length === 0) {
+    if (found === null && fallback === null) throw new Error('contact_upstream_failed')
+    return null
+  }
   const fn = functionWord(title)
   people.sort((a, b) => rank(b, fn) - rank(a, fn))
   return people.slice(0, 5)

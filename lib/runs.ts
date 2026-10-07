@@ -8,7 +8,11 @@ import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 import { type AllowanceKind, RUN_ALLOWANCE } from './prices'
 import type { Job, Person } from './types'
 
-export type Usage = Record<AllowanceKind, { used: number; tries: number }>
+/** Per kind: `tries` = attempts that reached a backend, `used` = attempts
+ *  that returned something, `misses` = attempts that came back empty. A try
+ *  that is neither is still in flight, and counts against the cap so that
+ *  parallel requests cannot run past it. */
+export type Usage = Record<AllowanceKind, { used: number; tries: number; misses: number }>
 export type Emails = { work: string[]; personal: string[] }
 
 export interface Run {
@@ -18,32 +22,32 @@ export interface Run {
   cents: number
   jobs: Job[]
   usage: Usage
-  /** People found per job id. */
+  /** People found per company (see companyKey). */
   contacts: Record<string, Person[]>
   /** Emails found per LinkedIn profile (see linkedinKey). */
   emails: Record<string, Emails>
+  /** Keys whose lookup came back empty, so asking again is a free miss. */
+  missed: Partial<Record<AllowanceKind, string[]>>
 }
 
 export const KINDS: AllowanceKind[] = ['contacts', 'emails', 'drafts']
 
 const path = (sub: string, id: string) => `runs/${sub}/${id}.json`
 
-export function linkedinKey(url: string): string {
-  return url.trim().toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/\/+$/, '')
-}
+const fresh = () => ({ used: 0, tries: 0, misses: 0 })
 
-export function canTry(usage: Usage, kind: AllowanceKind): boolean {
+/** Lookups this run may still start. */
+function room(usage: Usage, kind: AllowanceKind): number {
   const cap = RUN_ALLOWANCE[kind]
-  return usage[kind].used < cap.used && usage[kind].tries < cap.tries
+  const u = usage[kind]
+  // tries - misses = used + in flight
+  return Math.max(0, Math.min(cap.used - (u.tries - u.misses), cap.tries - u.tries))
 }
 
-/** Lookups left, as the app shows them. Out of tries reads as none left. */
+/** Lookups left, as the app shows them. */
 export function left(usage: Usage): Record<AllowanceKind, number> {
   const out = {} as Record<AllowanceKind, number>
-  for (const kind of KINDS) {
-    const cap = RUN_ALLOWANCE[kind]
-    out[kind] = usage[kind].tries >= cap.tries ? 0 : Math.max(0, cap.used - usage[kind].used)
-  }
+  for (const kind of KINDS) out[kind] = room(usage, kind)
   return out
 }
 
@@ -52,6 +56,8 @@ async function load(sub: string, id: string): Promise<{ run: Run; etag: string }
   const blob = await get(path(sub, id), { access: 'private', useCache: false })
   if (!blob) return null
   const run = JSON.parse(await new Response(blob.stream).text()) as Run
+  run.missed ??= {}
+  for (const kind of KINDS) run.usage[kind] = { ...fresh(), ...run.usage[kind] }
   const etag = (blob.headers?.get('etag') ?? blob.headers?.get('ETag') ?? '').replace(/^W\//, '')
   return { run, etag }
 }
@@ -67,9 +73,10 @@ export async function createRun(sub: string, cents: number, jobs: Job[]): Promis
     at: new Date().toISOString(),
     cents,
     jobs,
-    usage: { contacts: { used: 0, tries: 0 }, emails: { used: 0, tries: 0 }, drafts: { used: 0, tries: 0 } },
+    usage: { contacts: fresh(), emails: fresh(), drafts: fresh() },
     contacts: {},
     emails: {},
+    missed: {},
   }
   await put(path(sub, run.id), JSON.stringify(run), {
     access: 'private',
@@ -104,7 +111,7 @@ async function mutate(sub: string, id: string, fn: (r: Run) => void): Promise<Ru
     } catch (err) {
       const stale = err instanceof BlobPreconditionFailedError || /precondition/i.test(String((err as Error)?.message ?? ''))
       if (!stale || attempt === 3) throw err
-      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)))
+      await new Promise((r) => setTimeout(r, 100 + Math.random() * 200 * (attempt + 1)))
     }
   }
   throw new Error('run_contention')
@@ -114,9 +121,10 @@ export type StepOutcome<T> =
   | { ok: true; data: T; left: Record<AllowanceKind, number> }
   | { ok: false; code: string; message: string; left?: Record<AllowanceKind, number> }
 
-/** One lookup inside a run. A cached answer is free. Otherwise a try is
- *  spent before the backend call, and a hit only when it returns something,
- *  so an empty lookup never uses up the allowance. */
+/** One lookup inside a run. A cached answer, or a key that already came back
+ *  empty, is free. Otherwise a try is reserved before the backend call; an
+ *  empty answer records a miss, which never uses up the allowance, and a
+ *  backend error hands the try back. */
 export async function runStep<T>(args: {
   sub: string
   runId: string
@@ -124,7 +132,9 @@ export async function runStep<T>(args: {
   /** A reason the input does not belong to this run, or null. */
   check: (r: Run) => string | null
   cached?: (r: Run) => T | undefined
-  /** Null means nothing came back. */
+  /** What a miss is remembered under (a company, a profile). */
+  key?: (r: Run) => string
+  /** Null means nothing came back. Throwing means the backend failed. */
   work: (r: Run) => Promise<T | null>
   save?: (r: Run, data: T) => void
   miss: string
@@ -135,11 +145,15 @@ export async function runStep<T>(args: {
   if (invalid) return { ok: false, code: 'invalid', message: invalid, left: left(run.usage) }
   const hit = args.cached?.(run)
   if (hit !== undefined) return { ok: true, data: hit, left: left(run.usage) }
+  const missKey = args.key?.(run)
+  if (missKey && run.missed[args.kind]?.includes(missKey)) {
+    return { ok: false, code: 'miss', message: args.miss, left: left(run.usage) }
+  }
 
   let reserved: Run
   try {
     reserved = await mutate(args.sub, args.runId, (r) => {
-      if (!canTry(r.usage, args.kind)) throw new AllowanceSpent()
+      if (room(r.usage, args.kind) <= 0) throw new AllowanceSpent()
       r.usage[args.kind].tries++
     })
   } catch (err) {
@@ -149,8 +163,22 @@ export async function runStep<T>(args: {
     throw err
   }
 
-  const data = await args.work(reserved)
-  if (data === null) return { ok: false, code: 'miss', message: args.miss, left: left(reserved.usage) }
+  let data: T | null
+  try {
+    data = await args.work(reserved)
+  } catch (err) {
+    await mutate(args.sub, args.runId, (r) => {
+      r.usage[args.kind].tries = Math.max(0, r.usage[args.kind].tries - 1)
+    }).catch((e) => console.error('[run] could not hand back a try', args.runId, e))
+    throw err
+  }
+  if (data === null) {
+    const after = await mutate(args.sub, args.runId, (r) => {
+      r.usage[args.kind].misses++
+      if (missKey) r.missed[args.kind] = [...(r.missed[args.kind] ?? []), missKey]
+    })
+    return { ok: false, code: 'miss', message: args.miss, left: left(after.usage) }
+  }
   const saved = await mutate(args.sub, args.runId, (r) => {
     r.usage[args.kind].used++
     args.save?.(r, data)
