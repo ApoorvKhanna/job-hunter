@@ -44,7 +44,7 @@ Fill in `.env.local` (and the same variables on your host when you deploy).
 | Name | Required | What |
 | --- | --- | --- |
 | `VAAYA_API_KEY` | Yes | Your Vaaya API key, with balance. Pays for every backend call |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | A Google OAuth web client. Redirect URI: `<APP_URL>/api/auth/google/callback` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | A Google OAuth web client (Google Cloud Console, APIs & Services, Credentials; set up the consent screen first). Redirect URI: `<APP_URL>/api/auth/google/callback` |
 | `SESSION_SECRET` | Yes | 32 or more random characters, e.g. `openssl rand -hex 32` |
 | `APP_URL` | Yes | Where the app runs, no trailing slash: `http://localhost:3000` locally |
 | `BLOB_READ_WRITE_TOKEN` | Yes | Read-write token of a **private** Vercel Blob store. Balances, runs and saved results all live there |
@@ -66,8 +66,12 @@ pnpm dev
 ```
 
 Open http://localhost:3000 and sign in with Google. If a required variable is
-missing, the page names it. To try a top-up locally,
-use a Stripe test key and forward webhooks with the Stripe CLI:
+missing, the page names it.
+
+A new account starts with `START_CREDIT_CENTS` (0 by default), so without
+Stripe nobody can start a search. To try the flow locally, set
+`START_CREDIT_CENTS=500` for two runs. To try a top-up, use a Stripe test key
+and forward webhooks with the Stripe CLI:
 
 ```bash
 stripe listen --forward-to localhost:3000/api/stripe/webhook
@@ -136,8 +140,7 @@ Before a user's first wallet-settled call, `VAAYA_OWNER_KEY` (your account's
 primary, unrestricted key) moves `CUSTOMER_WELCOME_CENTS` from your Vaaya
 balance into that wallet, once. It is not refilled: after it is spent, calls
 settle on `VAAYA_API_KEY`. `CUSTOMER_BUDGET_CENTS` is the lifetime cap Vaaya
-enforces on the wallet.
-Job search through Vaaya, people search and email lookups then settle from the
+enforces on the wallet. Job search through Vaaya, people search and email lookups then settle from the
 user's own wallet, so spend is attributed per person. Resume reading, drafting
 and the first contact rung stay on `VAAYA_API_KEY`. Any wallet-side failure
 falls back to `VAAYA_API_KEY` for that call, so a user is never blocked by
