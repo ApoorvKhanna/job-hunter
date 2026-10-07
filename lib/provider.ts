@@ -1,5 +1,5 @@
 // The only file that talks to the data backend, with the operator's key.
-import { PROVIDER_API_KEY, PROVIDER_URL } from './env'
+import { VAAYA_API_KEY, VAAYA_URL } from './env'
 import { customerToken, forgetToken } from './customer'
 import { ensureFunded, refreshCustomer } from './customer-flow'
 import type { Account } from './ledger'
@@ -11,9 +11,9 @@ export type ProviderResult<T> = ProviderOk<T> | ProviderErr
 async function call(
   path: string,
   body: unknown,
-  auth: { token: string; idempotencyKey?: string } = { token: PROVIDER_API_KEY },
+  auth: { token: string; idempotencyKey?: string } = { token: VAAYA_API_KEY },
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await fetch(`${PROVIDER_URL}${path}`, {
+  const res = await fetch(`${VAAYA_URL}${path}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${auth.token}`,
@@ -36,7 +36,7 @@ function fail(status: number, body: Record<string, unknown>): ProviderErr {
   // upstream copy to the user. The user sees one neutral line; the real
   // reason goes to the logs.
   console.error('[provider]', status, code, src.message)
-  return { ok: false, code: 'upstream', message: 'That step did not go through. Nothing was charged. Try again in a minute.', detail: code }
+  return { ok: false, code: 'upstream', message: 'That step did not go through. Try again in a minute', detail: code }
 }
 
 /** One catalog call, capped at maxCostCents. */
@@ -47,8 +47,8 @@ export async function run<T>(service: string, action: string, params: Record<str
 }
 
 /** The same catalog call, settled on the USER's own Vaaya wallet when they
- *  have one. Anything the customer path cannot do — feature off, wallet not
- *  ready, unfunded, an unsupported action, an expired token, a short balance —
+ *  have one. Anything the customer path cannot do (feature off, wallet not
+ *  ready, unfunded, an unsupported action, an expired token, a short balance)
  *  falls through to the operator key exactly as `run` does. The user sees no
  *  difference; the ledger on Vaaya's side sees who actually spent. */
 export async function runFor<T>(

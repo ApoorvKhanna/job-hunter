@@ -1,94 +1,18 @@
-import { bucketFor, jsearchEnabled, searchJobs } from '@/lib/jsearch'
-import { runFor } from '@/lib/provider'
-import type { Account } from '@/lib/ledger'
-import { paidStep, readJson } from '@/lib/route'
+// Start a run: one job search. The balance must cover the run before we
+// search; the run is charged only when at least one job comes back.
+import { NextResponse } from 'next/server'
+import { bucketFor, searchJobs } from '@/lib/jsearch'
+import { InsufficientBalance, credit, debit } from '@/lib/ledger'
+import { MAX_JOBS, MAX_SEARCH_TITLES, RUN_CENTS } from '@/lib/prices'
+import { caller, readJson } from '@/lib/route'
+import { createRun, left } from '@/lib/runs'
 import { saveItems } from '@/lib/saved'
 import type { Job } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
-// ── legacy source (TheirStack, via the provider) ────────────────────────────
-// Kept as the top-up and as the fallback without a JSEARCH_API_KEY. It bills a flat
-// 40c per call regardless of rows, which is why it is no longer the default.
-interface RawJob {
-  id: number
-  job_title: string
-  company: string
-  company_domain: string | null
-  short_location?: string | null
-  location?: string | null
-  remote?: boolean | null
-  salary_string?: string | null
-  min_annual_salary_usd?: number | null
-  max_annual_salary_usd?: number | null
-  seniority?: string | null
-  date_posted: string
-  url: string
-  final_url?: string | null
-  description?: string | null
-  hiring_team?: Array<Record<string, unknown>>
-  company_object?: { linkedin_url?: string | null } | null
-}
-
-function salaryOf(j: RawJob): string | null {
-  if (j.salary_string) return j.salary_string
-  if (j.min_annual_salary_usd && j.max_annual_salary_usd)
-    return `$${Math.round(j.min_annual_salary_usd / 1000)}k to $${Math.round(j.max_annual_salary_usd / 1000)}k`
-  return null
-}
-
-function teamOf(raw: RawJob['hiring_team']): Job['hiring_team'] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((p) => {
-      const name = String(p.full_name ?? p.name ?? [p.first_name, p.last_name].filter(Boolean).join(' ')).trim()
-      if (!name) return null
-      return { name, title: (p.title ?? p.role ?? null) as string | null, linkedin_url: (p.linkedin_url ?? p.url ?? null) as string | null }
-    })
-    .filter((p): p is NonNullable<typeof p> => !!p)
-    .slice(0, 3)
-}
-
-/** One TheirStack page. Flat fee per call regardless of rows, so always ask
- *  for the full 10 — a top-up of 3 rows costs exactly what 10 rows cost. */
-async function legacySearch(
-  account: Account,
-  titles: string[],
-  days: number,
-  country: string | null,
-  remote: boolean,
-  page: number,
-): Promise<Job[] | { error: string; message: string }> {
-  const params: Record<string, unknown> = {
-    job_title_or: titles,
-    limit: 10,
-    page,
-    posted_at_max_age_days: days,
-    ...(country ? { job_country_code_or: [country] } : {}),
-    ...(remote ? { remote: true } : {}),
-  }
-  const out = await runFor<{ data?: RawJob[] }>(account, 'theirstack', 'jobs', params, 40)
-  if (!out.ok) return { error: out.code, message: out.message }
-  return (out.data.data ?? []).map((j) => ({
-    id: String(j.id),
-    title: j.job_title,
-    company: j.company,
-    company_domain: j.company_domain ?? null,
-    company_linkedin: j.company_object?.linkedin_url ?? null,
-    location: j.short_location ?? j.location ?? '',
-    remote: !!j.remote,
-    salary: salaryOf(j),
-    seniority: j.seniority ?? null,
-    posted: j.date_posted,
-    url: j.final_url ?? j.url,
-    description: (j.description ?? '').slice(0, 4000),
-    hiring_team: teamOf(j.hiring_team),
-  }))
-}
-
-/** Merge sources without showing the same posting twice. Google Jobs and
- *  TheirStack describe the same role differently, so match on company+title. */
+/** Merge pages without showing the same posting twice. */
 function mergeJobs(...lists: Job[][]): Job[] {
   const seen = new Set<string>()
   const out: Job[] = []
@@ -103,117 +27,101 @@ function mergeJobs(...lists: Job[][]): Job[] {
   return out
 }
 
-/** Below this many fresh matches we top up from the pricier, deeper source. */
-const THIN = 10
-
 export async function POST(req: Request) {
-  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; days?: number; page?: number }>(req)
-  const titles = (body.titles ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
-  if (titles.length === 0) return Response.json({ ok: false, code: 'invalid', message: 'Add at least one job title.' })
-  const page = Math.min(20, Math.max(0, Math.floor(Number(body.page ?? 0))))
+  const who = await caller()
+  if ('response' in who) return who.response
+  const { session, account } = who
+
+  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; days?: number }>(req)
+  const titles = (body.titles ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, MAX_SEARCH_TITLES)
+  if (titles.length === 0) return NextResponse.json({ ok: false, code: 'invalid', message: 'Add at least one job title' })
   const days = Math.min(60, Math.max(1, Number(body.days ?? 14)))
   const country = body.country_code && /^[A-Z]{2}$/i.test(body.country_code) ? body.country_code.toUpperCase() : null
   const remote = body.remote === true
 
-  return paidStep<Job[]>(
-    'jobs',
-    async (account) => {
-      const stats: Record<string, number> = {}
-      let jobs: Job[] = []
+  if (account.balanceCents < RUN_CENTS) {
+    return NextResponse.json({ ok: false, code: 'add_funds', message: 'Add funds to start a search', balance_cents: account.balanceCents, need_cents: RUN_CENTS })
+  }
 
-      if (jsearchEnabled()) {
-        // 1. The cheap source (through the provider, 1¢), at exactly the window the user asked for.
-        const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page }, account)
-        if (first.ok) {
-          stats.jsearch = first.jobs.length
-          jobs = first.jobs
-        } else {
-          // The cheap source being down (quota, outage) must not take the
-          // step down with it: treat it as thin and let the deeper source
-          // carry the search. Costs 40c a call while it lasts, so the log
-          // line is the signal to top the cheap vendor up.
-          console.log('[jobs] cheap source failed, deeper source carries', JSON.stringify({ code: first.code }))
-          stats.jsearch = -1
-        }
+  const stats: Record<string, number> = {}
+  const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page: 0 }, account)
+  if (!first.ok) {
+    return NextResponse.json({ ok: false, code: first.code, message: 'Job search did not go through. Nothing was charged. Try again in a minute', balance_cents: account.balanceCents })
+  }
+  let jobs = first.jobs
+  stats.first = jobs.length
 
-        // 2. Thin? Retry the cheap source on the wider bucket first. `week`
-        //    is denser but nominally misses days 8-14, so this catches those
-        //    before we spend anything.
-        if (stats.jsearch >= 0 && jobs.length < THIN && bucketFor(days) !== 'month') {
-          const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page, bucket: 'month' }, account)
-          if (wider.ok && wider.jobs.length > 0) {
-            stats.jsearch_month = wider.jobs.length
-            jobs = mergeJobs(jobs, wider.jobs).slice(0, THIN)
-          }
-        }
+  // Thin? Retry on the wider bucket. `week` is denser but nominally misses
+  // days 8 to 14, so this catches those.
+  if (jobs.length < MAX_JOBS && bucketFor(days) !== 'month') {
+    const wider = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page: 0, bucket: 'month' }, account)
+    if (wider.ok && wider.jobs.length > 0) {
+      stats.month = wider.jobs.length
+      jobs = mergeJobs(jobs, wider.jobs).slice(0, MAX_JOBS)
+    }
+  }
 
-        // 3. Still thin? Top up from the deeper source, still inside the
-        //    user's window so everything we show stays fresh. This is the
-        //    only path that costs real money, and only on a miss.
-        if (jobs.length < THIN) {
-          const topUp = await legacySearch(account, titles, days, country, remote, page)
-          if (Array.isArray(topUp)) {
-            stats.theirstack = topUp.length
-            jobs = mergeJobs(jobs, topUp).slice(0, THIN)
-          } else {
-            // The fallback failing is not the user's problem when the cheap
-            // source already found something.
-            stats.theirstack = -1
-            if (jobs.length === 0) return { ok: false, code: topUp.error, message: topUp.message }
-          }
-        }
-
-        // 4. Nothing at all? Widen the cheap source before giving up.
-        if (stats.jsearch >= 0 && jobs.length === 0) {
-          for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
-            if (t.days === days && t.country === country) continue
-            const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page }, account)
-            if (!wide.ok) break
-            if (wide.jobs.length > 0) {
-              stats.jsearch_widened = wide.jobs.length
-              jobs = wide.jobs
-              break
-            }
-          }
-        }
-      } else {
-        const out = await legacySearch(account, titles, days, country, remote, page)
-        if (!Array.isArray(out)) return { ok: false, code: out.error, message: out.message }
-        stats.theirstack_only = out.length
-        jobs = out
+  // Nothing at all? Widen to 30 days, then to any country, before giving up.
+  if (jobs.length === 0) {
+    for (const t of [{ days: 30, country }, { days: 30, country: null }]) {
+      if (t.days === days && t.country === country) continue
+      const wide = await searchJobs({ titles, countryCode: t.country, remoteOnly: remote, days: t.days, page: 0 }, account)
+      if (!wide.ok) break
+      if (wide.jobs.length > 0) {
+        stats.widened = wide.jobs.length
+        jobs = wide.jobs
+        break
       }
+    }
+  }
 
-      // Per-source counts on every real query: this is the data for the
-      // identical-query comparison once there is volume.
-      console.log('[jobs]', JSON.stringify({ ...stats, merged: jobs.length, titles, days, country, remote, page }))
+  console.log('[jobs]', JSON.stringify({ ...stats, found: jobs.length, titles, days, country, remote }))
 
-      if (jobs.length === 0) {
-        return {
-          ok: false,
-          code: 'no_jobs',
-          message:
-            page > 0
-              ? 'That is everything we could find for these titles. Nothing was charged.'
-              : 'No postings matched those titles, even after widening the search. Nothing was charged. Try simpler titles, like "Product Manager" instead of a long one.',
-        }
-      }
-      return { ok: true, data: jobs }
-    },
-    async (jobs, sub) =>
-      saveItems(
-        sub,
-        jobs.map((j) => ({
-          kind: 'job' as const,
-          at: new Date().toISOString(),
-          id: j.id,
-          title: j.title,
-          company: j.company,
-          location: j.location,
-          remote: j.remote,
-          salary: j.salary,
-          posted: j.posted,
-          url: j.url,
-        })),
-      ),
-  )
+  if (jobs.length === 0) {
+    return NextResponse.json({
+      ok: false,
+      code: 'no_jobs',
+      message: 'No postings matched those titles, even after widening the search. Nothing was charged. Try simpler titles, like "Product Manager"',
+      balance_cents: account.balanceCents,
+    })
+  }
+
+  let balance = account.balanceCents
+  try {
+    balance = (await debit(session.sub, RUN_CENTS, `Search: ${titles[0]}`)).balanceCents
+  } catch (err) {
+    if (err instanceof InsufficientBalance) {
+      return NextResponse.json({ ok: false, code: 'add_funds', message: 'Add funds to start a search', balance_cents: err.balanceCents, need_cents: RUN_CENTS })
+    }
+    // The search already ran. Never turn a ledger hiccup into a failed step:
+    // open the run uncharged and log it.
+    console.error('[ledger] debit failed after a search', session.sub, err)
+  }
+
+  let run
+  try {
+    run = await createRun(session.sub, RUN_CENTS, jobs)
+  } catch (err) {
+    console.error('[run] create failed, refunding', session.sub, err)
+    if (balance !== account.balanceCents) await credit(session.sub, RUN_CENTS, 'Refund: search could not be saved').catch(() => {})
+    return NextResponse.json({ ok: false, code: 'failed', message: 'That search could not be saved. Nothing was charged. Try again' })
+  }
+
+  await saveItems(
+    session.sub,
+    jobs.map((j) => ({
+      kind: 'job' as const,
+      at: new Date().toISOString(),
+      id: j.id,
+      title: j.title,
+      company: j.company,
+      location: j.location,
+      remote: j.remote,
+      salary: j.salary,
+      posted: j.posted,
+      url: j.url,
+    })),
+  ).catch((e) => console.error('[saved] jobs', e))
+
+  return NextResponse.json({ ok: true, data: { run_id: run.id, jobs, left: left(run.usage) }, balance_cents: balance, charged_cents: balance === account.balanceCents ? 0 : RUN_CENTS })
 }

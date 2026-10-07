@@ -3,11 +3,11 @@
 // What this gives us: every signed-in user becomes a distinct Vaaya identity
 // with its own x402 wallet address, funded explicitly from our prepaid balance.
 // Paid calls made with that customer's token settle from that wallet, so cost
-// is attributed per person. See docs/SDK-CUSTOMERS.md in the Vaaya repo.
+// is attributed per person.
 //
 // What it cannot do yet (backend fails closed, 422): the LLM router and the
 // routed people-finder. Those stay on the operator key; see provider.ts.
-import { CUSTOMER_BUDGET_CENTS, CUSTOMERS_ENABLED, OWNER_API_KEY, PROVIDER_URL } from './env'
+import { CUSTOMER_BUDGET_CENTS, CUSTOMERS_ENABLED, OWNER_API_KEY, VAAYA_URL } from './env'
 
 export interface Customer {
   id: string
@@ -37,7 +37,7 @@ export class CustomerError extends Error {
 }
 
 async function owner(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown, headers: Record<string, string> = {}) {
-  const res = await fetch(`${PROVIDER_URL}${path}`, {
+  const res = await fetch(`${VAAYA_URL}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${OWNER_API_KEY}`,

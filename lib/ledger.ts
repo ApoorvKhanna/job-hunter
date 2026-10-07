@@ -1,21 +1,10 @@
 // Per-user money, one private JSON blob per user. Writes are optimistic:
 // read with the ETag, write with ifMatch, retry on a precondition failure.
-// Amounts are integer paise. Nothing here ever goes negative.
+// Amounts are integer US cents. Nothing here ever goes negative.
 import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
-import { START_CREDIT_PAISE } from './env'
+import { PARSES_PER_DAY, START_CREDIT_CENTS } from './env'
 
-export interface Entry { at: string; kind: 'credit' | 'debit'; paise: number; note: string }
-export interface Pending {
-  id: string
-  at: string
-  paise: number
-  utr: string
-  status: 'pending' | 'approved' | 'rejected' | 'reversed'
-  /** Credited the moment the reference was entered (under the daily cap). */
-  auto?: boolean
-  /** When it was approved / rejected / reversed. */
-  settledAt?: string
-}
+export interface Entry { at: string; kind: 'credit' | 'debit'; cents: number; note: string }
 export interface CustomerRef {
   id: string
   status: 'provisioning' | 'ready' | 'failed'
@@ -33,9 +22,12 @@ export interface Account {
   email: string
   name: string
   createdAt: string
-  balancePaise: number
+  balanceCents: number
   entries: Entry[]
-  pending: Pending[]
+  /** Stripe Checkout sessions already credited, so a session credits once. */
+  topUps: string[]
+  /** When this account's recent free resume reads ran (last 24 hours). */
+  parses?: string[]
   /** The user's own Vaaya identity + x402 wallet, when managed customers are on. */
   customer?: CustomerRef
   /** Hash of the network the account was created from (see ipgate.ts). */
@@ -66,32 +58,28 @@ async function save(account: Account, etag: string | null): Promise<void> {
 }
 
 export class InsufficientBalance extends Error {
-  constructor(public balancePaise: number, public needPaise: number) {
+  constructor(public balanceCents: number, public needCents: number) {
     super('insufficient_balance')
   }
 }
 
 /** Get or create the account. New accounts start with the welcome credit
- *  unless the sign-in gate withheld it (a repeat network gets ₹0). */
+ *  unless the sign-in gate withheld it (a repeat network gets none). */
 export async function ensureAccount(
   who: { sub: string; email: string; name: string },
-  opts: { welcomePaise?: number; network?: string } = {},
+  opts: { welcomeCents?: number; network?: string } = {},
 ): Promise<Account> {
   const found = await load(who.sub)
   if (found) return found.account
-  const welcome = opts.welcomePaise ?? START_CREDIT_PAISE
+  const welcome = opts.welcomeCents ?? START_CREDIT_CENTS
   const account: Account = {
     sub: who.sub,
     email: who.email,
     name: who.name,
     createdAt: new Date().toISOString(),
-    balancePaise: welcome,
-    entries: [
-      welcome > 0
-        ? { at: new Date().toISOString(), kind: 'credit', paise: welcome, note: 'Welcome credit' }
-        : { at: new Date().toISOString(), kind: 'credit', paise: 0, note: 'No welcome credit: this network already has an account' },
-    ],
-    pending: [],
+    balanceCents: welcome,
+    entries: welcome > 0 ? [{ at: new Date().toISOString(), kind: 'credit', cents: welcome, note: 'Welcome credit' }] : [],
+    topUps: [],
     ...(opts.network ? { network: opts.network } : {}),
   }
   try {
@@ -132,87 +120,54 @@ async function mutate(sub: string, fn: (a: Account) => void): Promise<Account> {
   throw new Error('ledger_contention')
 }
 
-export function canAfford(account: Account, paise: number): boolean {
-  return account.balancePaise >= paise
-}
-
-export async function debit(sub: string, paise: number, note: string): Promise<Account> {
+export async function debit(sub: string, cents: number, note: string): Promise<Account> {
   return mutate(sub, (a) => {
-    if (a.balancePaise < paise) throw new InsufficientBalance(a.balancePaise, paise)
-    a.balancePaise -= paise
-    a.entries.unshift({ at: new Date().toISOString(), kind: 'debit', paise, note })
+    if (a.balanceCents < cents) throw new InsufficientBalance(a.balanceCents, cents)
+    a.balanceCents -= cents
+    a.entries.unshift({ at: new Date().toISOString(), kind: 'debit', cents, note })
     a.entries = a.entries.slice(0, 200)
   })
 }
 
-export async function credit(sub: string, paise: number, note: string): Promise<Account> {
+export async function credit(sub: string, cents: number, note: string): Promise<Account> {
   return mutate(sub, (a) => {
-    a.balancePaise += paise
-    a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', paise, note })
+    a.balanceCents += cents
+    a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', cents, note })
     a.entries = a.entries.slice(0, 200)
   })
 }
 
-export async function addPending(sub: string, paise: number, utr: string): Promise<Account> {
-  return mutate(sub, (a) => {
-    a.pending.unshift({ id: crypto.randomUUID(), at: new Date().toISOString(), paise, utr, status: 'pending' })
-    a.pending = a.pending.slice(0, 50)
-  })
-}
-
-/** Paise auto-credited to this account in the last 24 hours. */
-export function autoCreditedToday(a: Account, now = Date.now()): number {
-  return a.pending
-    .filter((p) => p.auto && p.status === 'approved' && now - Date.parse(p.at) < 86400000)
-    .reduce((sum, p) => sum + p.paise, 0)
-}
-
-/** Record the reference AND credit it in one write (the instant path). */
-export async function addApproved(sub: string, paise: number, utr: string): Promise<{ account: Account; id: string }> {
-  const id = crypto.randomUUID()
+/** Credit a paid Stripe Checkout session. The webhook and the return page
+ *  both call this, so it credits each session exactly once. */
+export async function creditTopUp(sub: string, sessionId: string, cents: number): Promise<{ account: Account; credited: boolean }> {
+  let credited = false
   const account = await mutate(sub, (a) => {
-    const at = new Date().toISOString()
-    a.pending.unshift({ id, at, paise, utr, status: 'approved', auto: true, settledAt: at })
-    a.pending = a.pending.slice(0, 50)
-    a.balancePaise += paise
-    a.entries.unshift({ at, kind: 'credit', paise, note: `UPI recharge (UTR ${utr})` })
+    a.topUps ??= []
+    if (a.topUps.includes(sessionId)) return
+    a.topUps.unshift(sessionId)
+    a.topUps = a.topUps.slice(0, 200)
+    a.balanceCents += cents
+    a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', cents, note: 'Card top-up' })
     a.entries = a.entries.slice(0, 200)
+    credited = true
   })
-  return { account, id }
+  return { account, credited }
 }
 
-/** Take an approved recharge back (a reference that turned out not to be a
- *  payment). The balance never goes below zero; whatever was already spent
- *  stays spent and is noted. */
-export async function reverseApproved(sub: string, id: string): Promise<Account> {
-  return mutate(sub, (a) => {
-    const p = a.pending.find((x) => x.id === id)
-    if (!p || p.status !== 'approved') throw new Error('not_approved')
-    p.status = 'reversed'
-    p.settledAt = new Date().toISOString()
-    const taken = Math.min(a.balancePaise, p.paise)
-    a.balancePaise -= taken
-    a.entries.unshift({ at: p.settledAt, kind: 'debit', paise: taken, note: `Recharge reversed (UTR ${p.utr})${taken < p.paise ? ', part already spent' : ''}` })
-    a.entries = a.entries.slice(0, 200)
+/** Count one free resume read. False when today's allowance is spent. */
+export async function takeParse(sub: string, now = Date.now()): Promise<boolean> {
+  let allowed = false
+  await mutate(sub, (a) => {
+    const recent = (a.parses ?? []).filter((t) => now - Date.parse(t) < 86400000)
+    allowed = recent.length < PARSES_PER_DAY
+    a.parses = allowed ? [new Date(now).toISOString(), ...recent] : recent
   })
+  return allowed
 }
 
 /** Record (or refresh) the user's Vaaya customer on their account. */
 export async function setCustomer(sub: string, customer: CustomerRef): Promise<Account> {
   return mutate(sub, (a) => {
     a.customer = customer
-  })
-}
-
-export async function settlePending(sub: string, id: string, status: 'approved' | 'rejected'): Promise<Account> {
-  return mutate(sub, (a) => {
-    const p = a.pending.find((x) => x.id === id)
-    if (!p || p.status !== 'pending') throw new Error('not_pending')
-    p.status = status
-    p.settledAt = new Date().toISOString()
-    if (status === 'approved') {
-      a.balancePaise += p.paise
-      a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', paise: p.paise, note: `UPI recharge (UTR ${p.utr})` })
-    }
   })
 }

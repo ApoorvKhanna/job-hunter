@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { APP_URL, START_CREDIT_PAISE } from '@/lib/env'
+import { APP_URL, START_CREDIT_CENTS } from '@/lib/env'
 import { exchangeCode } from '@/lib/google'
 import { attachCustomer } from '@/lib/customer-flow'
 import { isBlocked } from '@/lib/blocks'
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   }
   // One welcome credit per network. Only a brand-new account is judged; an
   // existing account signs in from anywhere.
-  let welcomePaise = START_CREDIT_PAISE
+  let welcomeCents = START_CREDIT_CENTS
   let network: string | undefined
   const ip = clientIp(req)
   if (IP_GATE !== 'off' && ip && !(await getAccount(who.sub))) {
@@ -41,10 +41,10 @@ export async function GET(req: Request) {
     if (!claim.first) {
       console.log('[gate] repeat network', JSON.stringify({ sub: who.sub, holder: claim.holder, mode: IP_GATE }))
       if (IP_GATE === 'block') return bounce('one_per_network')
-      welcomePaise = 0
+      welcomeCents = 0
     }
   }
-  await ensureAccount(who, { welcomePaise, network })
+  await ensureAccount(who, { welcomeCents, network })
   // Their own Vaaya wallet, when the feature is on. Best-effort by design.
   await attachCustomer(who.sub, who.email)
   const res = NextResponse.redirect(`${APP_URL}/app`)

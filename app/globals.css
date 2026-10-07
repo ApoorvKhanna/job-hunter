@@ -120,12 +120,12 @@ button.chip { cursor: pointer; font: inherit; color: inherit; }
 button.pill { cursor: pointer; color: inherit; }
 select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 
-/* nav links + tabs + prominent recharge */
+/* nav links + tabs + prominent add funds */
 .navlink { text-decoration: none; color: var(--muted); font-size: 13px; }
 .navlink:hover { color: var(--ink); }
 .navlink.on { color: var(--ink); font-weight: 500; }
-.btn.recharge { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
-.btn.recharge:hover { filter: brightness(1.06); }
+
+
 .balance { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .balance .amt { font-family: var(--mono); font-size: 13px; padding: 6px 10px; }
 .balance .go { border: 0; border-left: 1px solid var(--line); background: var(--ok); color: #fff; font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; cursor: pointer; }
@@ -194,7 +194,7 @@ ul.plain li::before { width: 6px; height: 6px; border-radius: 0; transform: rota
 .hero .btn:hover { background: #fff; }
 .hero .notice { color: var(--ink); }
 .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; display: block; }
-.stepgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 20px 0 0; }
+.stepgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0 0; }
 .stepgrid > div { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 13px 12px; font-size: 13px; line-height: 1.45; color: var(--muted); display: flex; flex-direction: column; }
 .stepgrid .num { font-family: var(--serif); font-size: 15px; font-weight: 600; color: var(--accent); }
 .stepgrid .ico { position: absolute; top: 12px; right: 12px; color: var(--accent); }

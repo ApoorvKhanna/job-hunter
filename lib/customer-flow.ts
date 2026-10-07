@@ -1,11 +1,10 @@
-// Where the customer wallet meets the app's own rupee ledger.
+// Where the customer wallet meets the app's own ledger.
 //
-// Two ledgers, on purpose. The rupee balance in Blob is what the USER may
-// spend and is the source of truth for the product. The Vaaya customer wallet
-// is what WE spend on their behalf, attributed to them. If the wallet is
-// missing, unfunded, provisioning, or the feature is off, the call simply
-// settles on the operator key as it always has. A user is never blocked by
-// wallet plumbing they cannot see.
+// Two ledgers, on purpose. The balance in Blob is what the USER may spend and
+// is the source of truth for the product. The Vaaya customer wallet is what
+// WE spend on their behalf, attributed to them. If the wallet is missing,
+// unfunded, provisioning, or the feature is off, the call simply settles on
+// the operator key. A user is never blocked by wallet plumbing they cannot see.
 import { CUSTOMER_WELCOME_CENTS } from './env'
 import {
   CustomerError,
@@ -96,28 +95,5 @@ export async function ensureFunded(account: Account): Promise<boolean> {
     const e = err as CustomerError
     console.log('[customer] funding failed', JSON.stringify({ sub: account.sub, code: e.code ?? 'error', status: e.status ?? 0 }))
     return false
-  }
-}
-
-/** Admin approved a rupee recharge: mirror it into the wallet at ₹1 ≈ 1¢.
- *  Keyed by the pending-recharge id so a double click cannot double fund. */
-export async function topUpCustomer(sub: string, paise: number, opKey: string): Promise<void> {
-  if (!customersEnabled()) return
-  const account = await getAccount(sub)
-  const cur = account?.customer
-  if (!cur || cur.status !== 'ready') return
-  const cents = Math.max(1, Math.round(paise / 100))
-  try {
-    const f = await fundCustomer(cur.id, cents, `recharge:${opKey}`)
-    await setCustomer(sub, {
-      ...cur,
-      fundedCents: cur.fundedCents + (f.status === 'failed' ? 0 : cents),
-      fundingOps: cur.fundingOps.includes(f.id) ? cur.fundingOps : [...cur.fundingOps, f.id],
-      updatedAt: new Date().toISOString(),
-    })
-    console.log('[customer] top-up', JSON.stringify({ sub, cents, op: f.id, status: f.status }))
-  } catch (err) {
-    const e = err as CustomerError
-    console.log('[customer] top-up failed', JSON.stringify({ sub, code: e.code ?? 'error' }))
   }
 }

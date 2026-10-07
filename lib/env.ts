@@ -1,4 +1,4 @@
-// Every knob the app reads. Nothing customer-facing names the data provider.
+// Every knob the app reads. Nothing customer-facing names the data backend.
 export const APP_NAME = 'Job Hunter'
 export const APP_URL = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
 export const SESSION_SECRET = process.env.SESSION_SECRET ?? ''
@@ -7,48 +7,49 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? ''
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? ''
 export const GOOGLE_REDIRECT_URI = `${APP_URL}/api/auth/google/callback`
 
-// The data backend. One operator key; users never see it.
-export const PROVIDER_URL = (process.env.PROVIDER_URL ?? 'https://vaaya.ai').replace(/\/$/, '')
-export const PROVIDER_API_KEY = process.env.PROVIDER_API_KEY ?? ''
+// The data backend (Vaaya). One operator key pays for every backend call:
+// resume reading, contacts, email lookups, drafts, and job search unless
+// JSEARCH_API_KEY is set. Users never see it.
+export const VAAYA_URL = (process.env.VAAYA_URL ?? 'https://vaaya.ai').replace(/\/$/, '')
+export const VAAYA_API_KEY = process.env.VAAYA_API_KEY ?? ''
 // Managing customers (create, fund, mint access) needs the account's primary,
 // unrestricted key; a capped sub-key is refused with 403. Kept separate so the
-// everyday operator key can stay capped. Falls back to PROVIDER_API_KEY.
-export const OWNER_API_KEY = process.env.VAAYA_OWNER_KEY || PROVIDER_API_KEY
+// everyday operator key can stay capped. Falls back to VAAYA_API_KEY.
+export const OWNER_API_KEY = process.env.VAAYA_OWNER_KEY || VAAYA_API_KEY
 
-// The job source. When set, jobs come from JSearch (OpenWeb Ninja's direct
-// API) at a fraction of the per-job cost; unset, we fall back to the old
-// vendor so the app keeps working.
+// Optional: your own OpenWeb Ninja key for JSearch. Set, job search calls
+// JSearch's direct API with it. Unset, job search goes through Vaaya on
+// VAAYA_API_KEY.
 export const JSEARCH_API_KEY = process.env.JSEARCH_API_KEY ?? ''
-// Jobs go through the provider (openwebninja/jsearch on Vaaya) first, so every
-// paid call settles on one ledger. The direct key above is only the fallback
-// while the provider has no key of its own; remove it once the provider path
-// is confirmed live. `JOBS_VIA_PROVIDER=false` forces the direct path.
-export const JOBS_VIA_PROVIDER = process.env.JOBS_VIA_PROVIDER !== 'false'
 
 // Managed customers: one Vaaya identity + x402 wallet per signed-in user, so
 // spend is attributed per person instead of pooled on the operator key. Off
-// by default: the backend returns 503 customers_not_enabled until its owner
-// rolls the feature out, and every path here degrades to the operator key.
+// by default; every path here degrades to the operator key.
 export const CUSTOMERS_ENABLED = process.env.VAAYA_CUSTOMERS_ENABLED === 'true'
 // Lifetime cap on what one customer wallet may ever be funded with, in cents.
 export const CUSTOMER_BUDGET_CENTS = Math.round(Number(process.env.CUSTOMER_BUDGET_CENTS ?? 500))
-// First funding, in cents. Mirrors the welcome credit at the app's ₹1 ≈ 1¢ mapping.
-export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 49))
+// What the owner key moves into a new wallet before its first call, in cents.
+export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 50))
 
-// Money. Balances are integer paise. Every new account starts with this.
-export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)
-export const UPI_ID = process.env.UPI_ID ?? ''
-// Recharges up to this much per account per day are credited the moment the
-// UTR is entered (and reviewed later on /admin); larger ones wait for approval.
-export const AUTO_CREDIT_INR_PER_DAY = Math.round(Number(process.env.AUTO_CREDIT_INR_PER_DAY ?? 49))
-export const UPI_NAME = process.env.UPI_NAME ?? APP_NAME
+// Money. Balances are integer US cents. New accounts start with this much
+// (none by default).
+export const START_CREDIT_CENTS = Math.max(0, Math.round(Number(process.env.START_CREDIT_CENTS ?? 0)))
+// Free resume reads per account per day. Each one is a model call on the
+// operator's key.
+export const PARSES_PER_DAY = Math.max(1, Math.round(Number(process.env.PARSES_PER_DAY ?? 10)))
+
+// Card top-ups through the operator's own Stripe account. Without a secret
+// key the add-funds sheet says card payments are not set up.
+export const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? ''
+export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? ''
+
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 
 export function missingConfig(): string[] {
   const out: string[] = []
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) out.push('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET')
   if (!SESSION_SECRET || SESSION_SECRET.length < 32) out.push('SESSION_SECRET')
-  if (!PROVIDER_API_KEY) out.push('PROVIDER_API_KEY')
+  if (!VAAYA_API_KEY) out.push('VAAYA_API_KEY')
   if (!process.env.BLOB_READ_WRITE_TOKEN) out.push('BLOB_READ_WRITE_TOKEN')
   return out
 }

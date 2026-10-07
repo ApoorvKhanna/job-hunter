@@ -3,9 +3,9 @@
 // the same address are either created without the welcome credit (default) or
 // turned away (`IP_GATE=block`). Existing accounts always sign in.
 //
-// Why credit-only by default: Indian mobile carriers and campus networks put
-// thousands of real people behind one address. Withholding the welcome credit stops
-// the farm; blocking would lock out the second honest student in a hostel.
+// Why credit-only by default: mobile carriers, offices and campus networks put
+// many real people behind one address. Withholding the welcome credit stops a
+// farm; blocking would lock out the second honest person on the same network.
 import { createHash } from 'node:crypto'
 import { get, put } from '@vercel/blob'
 

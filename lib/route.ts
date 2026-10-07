@@ -1,14 +1,10 @@
-// Shared plumbing for the paid routes: who is calling, can they afford the
-// step, run it, debit only on success.
+// Shared plumbing for the API routes: who is calling, and how a step inside
+// a run answers.
 import { NextResponse } from 'next/server'
-import { type Account, InsufficientBalance, debit, ensureAccount } from './ledger'
-import { PRICE_PAISE, type Step } from './prices'
-import type { ProviderResult } from './provider'
 import { isBlocked } from './blocks'
-import { readSession } from './session'
-
-export type ApiOk<T> = { ok: true; data: T; balance_paise: number; charged_paise: number }
-export type ApiErr = { ok: false; code: string; message: string; balance_paise?: number; need_paise?: number }
+import { type Account, ensureAccount } from './ledger'
+import { type StepOutcome, runStep } from './runs'
+import { type Session, readSession } from './session'
 
 export async function readJson<T>(req: Request): Promise<T> {
   try {
@@ -31,44 +27,31 @@ export function extractJson<T>(text: string): T | null {
   }
 }
 
-function json(body: ApiOk<unknown> | ApiErr, status = 200) {
-  return NextResponse.json(body, { status })
+/** The signed-in, unblocked caller and their account, or the response to send instead. */
+export async function caller(): Promise<{ session: Session; account: Account } | { response: NextResponse }> {
+  const session = await readSession()
+  if (!session) return { response: NextResponse.json({ ok: false, code: 'signed_out', message: 'Please sign in again' }, { status: 401 }) }
+  if (await isBlocked('sub', session.sub)) {
+    return { response: NextResponse.json({ ok: false, code: 'blocked', message: 'This account has been suspended' }, { status: 403 }) }
+  }
+  return { session, account: await ensureAccount(session) }
 }
 
-/** Run one paid step for the signed-in user. */
-export async function paidStep<T>(
-  step: Step,
-  fn: (account: Account) => Promise<ProviderResult<T> | { ok: false; code: string; message: string }>,
-  /** Runs after a successful charge. Its failure never fails the step. */
+/** Run one lookup inside the caller's run and answer with what is left. */
+export async function runStepResponse<T>(
+  args: Omit<Parameters<typeof runStep<T>>[0], 'sub'>,
+  /** Runs after a hit. Its failure never fails the step. */
   after?: (data: T, sub: string) => Promise<void>,
 ): Promise<NextResponse> {
-  const session = await readSession()
-  if (!session) return json({ ok: false, code: 'signed_out', message: 'Please sign in again.' }, 401)
-  if (await isBlocked('sub', session.sub)) return json({ ok: false, code: 'blocked', message: 'This account has been suspended.' }, 403)
-  const account = await ensureAccount(session)
-  const price = PRICE_PAISE[step]
-  if (account.balancePaise < price) {
-    return json({ ok: false, code: 'recharge', message: 'Your balance is too low for this step.', balance_paise: account.balancePaise, need_paise: price })
-  }
-  let result: ProviderResult<T> | { ok: false; code: string; message: string }
+  const who = await caller()
+  if ('response' in who) return who.response
+  let out: StepOutcome<T>
   try {
-    result = await fn(account)
+    out = await runStep<T>({ ...args, sub: who.session.sub })
   } catch (err) {
-    console.error('[step]', step, err)
-    return json({ ok: false, code: 'failed', message: 'That step did not go through. Nothing was charged.', balance_paise: account.balancePaise })
+    console.error('[step]', args.kind, err)
+    return NextResponse.json({ ok: false, code: 'failed', message: 'That step did not go through. Try again' })
   }
-  if (!result.ok) return json({ ...result, balance_paise: account.balancePaise })
-  try {
-    const charged = await debit(session.sub, price, step)
-    if (after) await after(result.data, session.sub).catch((e) => console.error('[after]', step, e))
-    return json({ ok: true, data: result.data, balance_paise: charged.balancePaise, charged_paise: price })
-  } catch (err) {
-    if (err instanceof InsufficientBalance) {
-      return json({ ok: false, code: 'recharge', message: 'Your balance is too low for this step.', balance_paise: err.balancePaise, need_paise: price })
-    }
-    // The provider already did the work. Never turn a ledger hiccup into a
-    // failed step for the user: hand back the result, skip the charge, log it.
-    console.error('[ledger] debit failed after success', step, session.sub, err)
-    return json({ ok: true, data: result.data, balance_paise: account.balancePaise, charged_paise: 0 })
-  }
+  if (out.ok && after) await after(out.data, who.session.sub).catch((e) => console.error('[after]', args.kind, e))
+  return NextResponse.json(out)
 }

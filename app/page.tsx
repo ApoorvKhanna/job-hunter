@@ -1,17 +1,17 @@
 import { redirect } from 'next/navigation'
-import { GOOGLE_CLIENT_ID, START_CREDIT_PAISE } from '@/lib/env'
-import { PRICE_PAISE, inr } from '@/lib/prices'
+import { GOOGLE_CLIENT_ID, START_CREDIT_CENTS } from '@/lib/env'
+import { RUN_ALLOWANCE, RUN_CENTS, usd } from '@/lib/prices'
 import { readSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
 
 const ERRORS: Record<string, string> = {
-  access_denied: 'You cancelled the Google sign-in.',
-  state_mismatch: 'That sign-in link expired. Try again.',
-  google_failed: 'Google did not confirm your account. Try again.',
-  not_configured: 'Sign-in is not set up yet.',
-  one_per_network: 'One account per network. Sign in with the Google account you first used here.',
-  blocked: 'This account is not able to use Job Hunter.',
+  access_denied: 'You canceled the Google sign-in',
+  state_mismatch: 'That sign-in link expired. Try again',
+  google_failed: 'Google did not confirm your account. Try again',
+  not_configured: 'Sign-in is not set up yet',
+  one_per_network: 'One account per network. Sign in with the Google account you first used here',
+  blocked: 'This account is not able to use Job Hunter',
 }
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
@@ -22,60 +22,57 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     <main className="landing">
       <nav className="nav">
         <span className="brand">Job Hunter</span>
-        <span className="nav-right small">{inr(START_CREDIT_PAISE)} in granted credits</span>
+        <span className="nav-right small">{usd(RUN_CENTS)} a run · free if no jobs are found</span>
       </nav>
 
       <section className="hero">
         <div className="hero-text">
-          <h1>Find jobs that fit. Know who to contact.</h1>
+          <h1>Find jobs that fit. Know who to write to</h1>
           <p className="muted">
-            Upload your resume to find recent openings, relevant contacts at each company, and an email draft based on
-            your experience. Choose each step as you go. Pay per step. Failed steps aren’t charged.
+            Upload your resume. Get fresh job matches, contacts at hiring companies, and an email draft based on your
+            experience. {usd(RUN_CENTS)} a run, charged only when the search finds jobs
           </p>
-          {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error}).`}</div> : null}
+          {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error})`}</div> : null}
           <p style={{ margin: '18px 0 8px' }}>
             <a className="btn" href="/api/auth/google/start" aria-disabled={!GOOGLE_CLIENT_ID}>
               <GoogleMark /> Continue with Google
             </a>
           </p>
-          <p className="small muted" style={{ margin: 0 }}>Start with {inr(START_CREDIT_PAISE)} in granted credits. Add more with UPI whenever you need them.</p>
+          <p className="small muted" style={{ margin: 0 }}>
+            {START_CREDIT_CENTS > 0 ? `Start with ${usd(START_CREDIT_CENTS)} of credit. ` : ''}Add funds by card whenever you need them
+          </p>
         </div>
         <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>
       </section>
 
       <div className="stepgrid">
         <div>
-          <span className="num">I</span><Icon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" />
-          <b>Sign in</b>
-          Get {inr(START_CREDIT_PAISE)} in granted credits. Your jobs, emails and drafts are saved to your account.
-        </div>
-        <div>
-          <span className="num">II</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />
+          <span className="num">I</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />
           <b>Add your resume</b>
-          Upload a PDF or DOCX, or paste the text. We suggest job titles from your experience.
-          <span className="price">{inr(PRICE_PAISE.parse)}</span>
+          Upload a PDF or DOCX, or paste the text. We suggest job titles from your experience
+          <span className="price">free</span>
         </div>
         <div>
-          <span className="num">III</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
-          <b>Find matching jobs</b>
-          Adjust titles, country and date range, then search recent openings.
-          <span className="price">{inr(PRICE_PAISE.jobs)}</span>
+          <span className="num">II</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
+          <b>See matching jobs</b>
+          Edit titles, country, remote and how recent. Up to 10 postings, newest first
+          <span className="price">{usd(RUN_CENTS)} a run</span>
         </div>
         <div>
-          <span className="num">IV</span><Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 8a5 5 0 0 1 10 0M16 10a2.5 2.5 0 1 0 0-5M17 14.5a4 4 0 0 1 3 4.5" />
-          <b>Find contacts</b>
-          Managers and recruiters at the company. Look up an email for the one you choose.
-          <span className="price">{inr(PRICE_PAISE.contact)} · email {inr(PRICE_PAISE.email)}</span>
+          <span className="num">III</span><Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 8a5 5 0 0 1 10 0M16 10a2.5 2.5 0 1 0 0-5M17 14.5a4 4 0 0 1 3 4.5" />
+          <b>Find who is hiring</b>
+          Managers and recruiters at up to {RUN_ALLOWANCE.contacts.used} companies, with up to {RUN_ALLOWANCE.emails.used} email lookups
+          <span className="price">in the run</span>
         </div>
         <div>
-          <span className="num">V</span><Icon d="M4 6h16v12H4Zm0 1 8 6 8-6" />
-          <b>Prepare your email</b>
-          A draft from your experience and the role. Review it, copy it, send it when ready.
-          <span className="price">{inr(PRICE_PAISE.draft)}</span>
+          <span className="num">IV</span><Icon d="M4 6h16v12H4Zm0 1 8 6 8-6" />
+          <b>Draft your email</b>
+          A short email from your experience and the role. Up to {RUN_ALLOWANCE.drafts.used} drafts or rewrites
+          <span className="price">in the run</span>
         </div>
       </div>
 
-      <p className="footer">Failed steps aren’t charged. Your jobs, revealed emails and drafts are saved automatically and free to reopen.</p>
+      <p className="footer">A search that finds nothing is free, and so is a lookup that comes back empty. Your jobs, contacts and drafts are saved and free to reopen</p>
     </main>
   )
 }

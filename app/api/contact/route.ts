@@ -1,11 +1,11 @@
-// Who to write to at the company. Three rungs, cheapest first; the user is
-// charged ₹3 only if at least one person comes back.
-//   1. routed people-finder (2¢): "managers, founders, recruiters at X" → up to 15 rows
-//   2. ContactOut people search, broad leadership titles (3¢)
-//   3. nothing → no_people, no charge
+// Who to write to at the company. Two rungs, cheapest first. A lookup that
+// finds nobody does not use up the run's contact allowance.
+//   1. routed people-finder: "managers, founders, recruiters at X"
+//   2. ContactOut people search, broad leadership titles, when the first
+//      rung found fewer than two people
 import { run, runFor } from '@/lib/provider'
 import type { Account } from '@/lib/ledger'
-import { paidStep, readJson } from '@/lib/route'
+import { caller, readJson, runStepResponse } from '@/lib/route'
 import type { Person } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -62,7 +62,7 @@ async function rungFind(company: string, domain: string | null, jobTitle: string
       headline: null,
       location: r.location ?? null,
       linkedin_url: String(r.linkedin),
-      has_work_email: true, // unknown until we ask; a miss is never charged
+      has_work_email: true, // unknown until we ask; a miss never uses the run
       has_personal_email: false,
     }))
 }
@@ -95,32 +95,47 @@ async function rungContactOut(account: Account, company: string, jobTitle: strin
 }
 
 export async function POST(req: Request) {
-  const { company, company_domain, job_title } = await readJson<{ company?: string; company_domain?: string | null; job_title?: string }>(req)
-  if (!company) return Response.json({ ok: false, code: 'invalid', message: 'Company is required.' })
-  const title = job_title ?? ''
-  return paidStep<Person[]>('contact', async (account) => {
-    const seen = new Set<string>()
-    const people: Person[] = []
-    const add = (rows: Person[]) => {
-      for (const p of rows) {
-        const k = p.linkedin_url.toLowerCase().replace(/\/+$/, '')
-        if (!seen.has(k)) {
-          seen.add(k)
-          people.push(p)
-        }
+  const { run_id, job_id } = await readJson<{ run_id?: string; job_id?: string }>(req)
+  if (!run_id || !job_id) return Response.json({ ok: false, code: 'invalid', message: 'Pick a job from your search' })
+  const who = await caller()
+  if ('response' in who) return who.response
+  const account = who.account
+  return runStepResponse<Person[]>({
+    runId: run_id,
+    kind: 'contacts',
+    check: (r) => (r.jobs.some((j) => j.id === job_id) ? null : 'That job is not part of this search'),
+    cached: (r) => (r.contacts[job_id]?.length ? r.contacts[job_id] : undefined),
+    work: async (r) => {
+      const job = r.jobs.find((j) => j.id === job_id)
+      if (!job) return null
+      return findPeople(account, job.company, job.company_domain, job.title)
+    },
+    save: (r, people) => {
+      r.contacts[job_id] = people
+    },
+    miss: 'No managers or recruiters found at this company yet. This lookup did not use your run. You can still draft an email without a contact',
+  })
+}
+
+async function findPeople(account: Account, company: string, domain: string | null, title: string): Promise<Person[] | null> {
+  const seen = new Set<string>()
+  const people: Person[] = []
+  const add = (rows: Person[]) => {
+    for (const p of rows) {
+      const k = p.linkedin_url.toLowerCase().replace(/\/+$/, '')
+      if (!seen.has(k)) {
+        seen.add(k)
+        people.push(p)
       }
     }
-    const t0 = Date.now()
-    add(await rungFind(company, company_domain ?? null, title))
-    const t1 = Date.now()
-    if (people.length < 2) add(await rungContactOut(account, company, title))
-    console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: people.length < 2 ? Date.now() - t1 : 0, people: people.length }))
-    if (people.length === 0) {
-      console.log('[contact] no people', company, company_domain)
-      return { ok: false, code: 'no_people', message: `Could not find anyone at ${company} yet. Nothing was charged. Try another posting, or draft a note without a name.` }
-    }
-    const fn = functionWord(title)
-    people.sort((a, b) => rank(b, fn) - rank(a, fn))
-    return { ok: true, data: people.slice(0, 5) }
-  })
+  }
+  const t0 = Date.now()
+  add(await rungFind(company, domain, title))
+  const t1 = Date.now()
+  if (people.length < 2) add(await rungContactOut(account, company, title))
+  console.log('[contact]', JSON.stringify({ company, title, find_ms: t1 - t0, contactout_ms: people.length < 2 ? Date.now() - t1 : 0, people: people.length }))
+  if (people.length === 0) return null
+  const fn = functionWord(title)
+  people.sort((a, b) => rank(b, fn) - rank(a, fn))
+  return people.slice(0, 5)
 }

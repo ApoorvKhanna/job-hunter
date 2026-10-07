@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Header from '../header'
-import Recharge from '../recharge'
+import AddFunds from '../add-funds'
 import { postedOn } from '@/lib/format'
 import type { SavedEmail, SavedItem, SavedJob, SavedNote } from '@/lib/saved'
 
@@ -16,15 +16,15 @@ const TABS: Array<{ id: Tab; label: string }> = [
 function when(at: string): string {
   const d = new Date(at)
   const days = Math.floor((Date.now() - d.getTime()) / 86400000)
-  if (days === 0) return `at ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
+  if (days === 0) return `at ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
   if (days === 1) return 'yesterday'
   if (days < 7) return `${days} days ago`
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
 
-export default function SavedView({ items, balancePaise, email, upi }: { items: SavedItem[]; balancePaise: number; email: string; upi: { id: string; name: string } }) {
+export default function SavedView({ items, balanceCents, email, cardsEnabled }: { items: SavedItem[]; balanceCents: number; email: string; cardsEnabled: boolean }) {
   const [tab, setTab] = useState<Tab>('note')
-  const [recharge, setRecharge] = useState(false)
+  const [addFunds, setAddFunds] = useState(false)
   const [q, setQ] = useState('')
 
   const groups = useMemo(() => {
@@ -39,11 +39,11 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 
   return (
     <main className="wrap">
-      <Header active="saved" email={email} balance={balancePaise} onRecharge={() => setRecharge(true)} />
-      {recharge ? <Recharge need={0} balance={balancePaise} upi={upi} onClose={() => setRecharge(false)} /> : null}
+      <Header active="saved" email={email} balance={balanceCents} onAddFunds={() => setAddFunds(true)} />
+      {addFunds ? <AddFunds need={0} balance={balanceCents} cardsEnabled={cardsEnabled} onClose={() => setAddFunds(false)} /> : null}
 
       <h2 style={{ marginTop: 0 }}>Your saved results</h2>
-      <p className="small muted">Your saved jobs, contacts and email drafts are free to revisit.</p>
+      <p className="small muted">Your saved jobs, contacts and email drafts are free to revisit</p>
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -117,16 +117,16 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 
 const EMPTY: Record<Tab, { filtered: [string, string]; none: [string, string] }> = {
   email: {
-    filtered: ['No contacts match your search.', 'Try a different company, job title or name.'],
-    none: ['No saved contacts yet.', 'Find a contact’s email to save it here.'],
+    filtered: ['No contacts match your search', 'Try a different company, job title or name'],
+    none: ['No saved contacts yet', 'Find a contact’s email to save it here'],
   },
   job: {
-    filtered: ['No jobs match your search.', 'Try a different company or job title.'],
-    none: ['No saved jobs yet.', 'Run a job search to start your list.'],
+    filtered: ['No jobs match your search', 'Try a different company or job title'],
+    none: ['No saved jobs yet', 'Run a job search to start your list'],
   },
   note: {
-    filtered: ['No drafts match your search.', 'Try a different company, job title or name.'],
-    none: ['No email drafts yet.', 'Choose a job and create your first draft.'],
+    filtered: ['No drafts match your search', 'Try a different company, job title or name'],
+    none: ['No email drafts yet', 'Choose a job and create your first draft'],
   },
 }
 
