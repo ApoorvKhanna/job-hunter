@@ -14,7 +14,7 @@ India pays in rupees (UPI or card), everyone else in US dollars (card), both
 through Stripe. An account's currency is fixed at sign-up from the visitor's
 country (`x-vercel-ip-country`).
 
-Live: https://job-hunter-in.vercel.app
+Live: https://thejobhunter.in (the old job-hunter-in.vercel.app address redirects there)
 
 ## How it is built
 
