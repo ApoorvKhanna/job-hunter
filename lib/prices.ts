@@ -6,22 +6,21 @@ export type Currency = 'inr' | 'usd'
 export type Step = 'parse' | 'jobs' | 'contact' | 'email' | 'draft'
 
 export const PRICES: Record<Currency, Record<Step, number>> = {
-  // Twice the launch prices (₹20 search, ₹3 contacts, ₹10 email, ₹1 draft).
-  // Reading a resume is free, capped per day, so the ₹40 welcome credit
-  // covers exactly one search.
-  inr: { parse: 0, jobs: 4000, contact: 600, email: 2000, draft: 200 },
-  // The same ratio as the review (₹479 = $9, about ₹53 to the dollar).
-  usd: { parse: 0, jobs: 75, contact: 10, email: 40, draft: 5 },
+  // Reading a resume is free, capped per day.
+  inr: { parse: 0, jobs: 4900, contact: 600, email: 2000, draft: 200 },
+  // Dollar prices follow one fixed ratio, ₹499 = $9 (about ₹55 to the
+  // dollar), rounded to the cent. Not the market rate, on purpose.
+  usd: { parse: 0, jobs: 88, contact: 11, email: 36, draft: 4 },
 }
 
 /** The resume + profile review: one price, everything included. */
 export const REVIEW_PRICE: Record<Currency, number> = { inr: 47900, usd: 900 }
 
-/** Credit a new account starts with (one job search). */
-export const WELCOME: Record<Currency, number> = { inr: 4000, usd: 75 }
+/** Credit a new account starts with. */
+export const WELCOME: Record<Currency, number> = { inr: 4500, usd: 81 }
 
 /** Top-ups offered in the add-credits sheet, in whole rupees / dollars. */
-export const TOP_UPS: Record<Currency, readonly number[]> = { inr: [99, 199, 499, 999], usd: [5, 10, 25] }
+export const TOP_UPS: Record<Currency, readonly number[]> = { inr: [149, 499, 999], usd: [5, 10, 20] }
 
 /** Smallest card / UPI payment we open a checkout for, in minor units. */
 export const MIN_CHECKOUT: Record<Currency, number> = { inr: 5000, usd: 100 }

@@ -56,19 +56,20 @@ Live: https://thejobhunter.in (the old job-hunter-in.vercel.app address redirect
 
 ## Prices
 
-In `lib/prices.ts`. Twice the launch prices; reading a resume is now free
-(10 a day) so the welcome credit covers exactly one search.
+In `lib/prices.ts`. Reading a resume is free (10 a day). Dollar prices follow
+one fixed ratio, ₹499 = $9, rounded to the cent (deliberately not the market
+rate). The review is priced on its own.
 
 | | India | Everyone else |
 | --- | --- | --- |
-| Welcome credit | ₹40 | $0.75 |
+| Welcome credit | ₹45 | $0.81 |
 | Read the resume | Free | Free |
-| Ten matching postings | ₹40 | $0.75 |
-| People at a company | ₹6 | $0.10 |
-| Reveal one email | ₹20 | $0.40 |
-| Draft the note | ₹2 | $0.05 |
+| Ten matching postings | ₹49 | $0.88 |
+| People at a company | ₹6 | $0.11 |
+| Reveal one email | ₹20 | $0.36 |
+| Draft the note | ₹2 | $0.04 |
 | Resume and profile review | ₹479 | $9 |
-| Top-ups | ₹99, ₹199, ₹499, ₹999 | $5, $10, $25 |
+| Top-ups | ₹149, ₹499, ₹999 | $5, $10, $20 |
 
 A review costs roughly 10 to 15¢ in backend calls: the model (scan plus
 evaluation) and up to 1¢ to 4¢ per profile read.

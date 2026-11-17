@@ -44,7 +44,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             </a>
           </p>
           <p className="small muted" style={{ margin: 0 }}>
-            Start with {m(WELCOME[c])} in free credits, enough for a job search. Add more {c === 'inr' ? 'by UPI or card' : 'by card'} whenever you need them.
+            Start with {m(WELCOME[c])} in free credits. Add more {c === 'inr' ? 'by UPI or card' : 'by card'} whenever you need them.
           </p>
         </div>
         <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>

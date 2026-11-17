@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { type Currency, money } from '@/lib/prices'
+import { type Currency, PRICES, money } from '@/lib/prices'
 
 export type TabId = 'home' | 'jobs' | 'review' | 'saved'
 
@@ -10,7 +10,7 @@ export type TabId = 'home' | 'jobs' | 'review' | 'saved'
 export default function Header({ active, email, balance, currency, onRecharge }: { active: TabId; email: string; balance: number; currency: Currency; onRecharge: () => void }) {
   const tab = (id: TabId, href: string, label: string) =>
     active === id ? <span className="navlink on" aria-current="page">{label}</span> : <a className="navlink" href={href}>{label}</a>
-  const low = balance < (currency === 'inr' ? 4000 : 75)
+  const low = balance < PRICES[currency].jobs
 
   // Squash & stretch when money lands. A debit happens many times a session,
   // so it changes the number quietly (frequency of use).
