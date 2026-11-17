@@ -114,8 +114,11 @@ export async function chat(
     stream: false,
   })
   if (status < 400) {
-    const choices = body.choices as Array<{ message?: { content?: string } }> | undefined
-    return { ok: true, data: choices?.[0]?.message?.content ?? '' }
+    const choices = body.choices as Array<{ message?: { content?: string }; finish_reason?: string }> | undefined
+    const data = choices?.[0]?.message?.content ?? ''
+    // A reply cut off at max_tokens is half a JSON object that never parses.
+    if (choices?.[0]?.finish_reason === 'length') console.warn('[llm] cut off at max_tokens', JSON.stringify({ model: opts.model, maxTokens, chars: data.length }))
+    return { ok: true, data }
   }
   return fail(status, body)
 }

@@ -163,9 +163,11 @@ function cleanEvaluation(raw: Record<string, unknown> | null, roles: string[]): 
 
 async function ask(system: string, user: string, label: string): Promise<Record<string, unknown> | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const out = await chat([{ role: 'system', content: withDate(system) }, { role: 'user', content: user }], 3000, { model: REVIEW_MODEL, temperature: 0.3 })
+    // Three roles across five sources runs past 3,000 tokens, and a cut-off
+    // reply never parses (2026-11-17), so the budget leaves plenty of room.
+    const out = await chat([{ role: 'system', content: withDate(system) }, { role: 'user', content: user }], 8000, { model: REVIEW_MODEL, temperature: 0.3 })
     const got = out.ok ? extractJson<Record<string, unknown>>(out.data) : null
-    console.log('[review]', label, JSON.stringify({ attempt, ok: out.ok, parsed: !!got, code: out.ok ? undefined : out.detail }))
+    console.log('[review]', label, JSON.stringify({ attempt, ok: out.ok, parsed: !!got, chars: out.ok ? out.data.length : undefined, code: out.ok ? undefined : out.detail }))
     if (got) return got
   }
   return null
