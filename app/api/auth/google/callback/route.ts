@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
-import { APP_URL, START_CREDIT_PAISE } from '@/lib/env'
+import { APP_URL, DEFAULT_CURRENCY } from '@/lib/env'
 import { exchangeCode } from '@/lib/google'
 import { attachCustomer } from '@/lib/customer-flow'
 import { isBlocked } from '@/lib/blocks'
 import { IP_GATE, claimNetwork, clientIp, networkKey } from '@/lib/ipgate'
 import { ensureAccount, getAccount } from '@/lib/ledger'
+import { currencyForCountry } from '@/lib/prices'
 import { STATE_COOKIE, sessionCookie } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
   }
   // One welcome credit per network. Only a brand-new account is judged; an
   // existing account signs in from anywhere.
-  let welcomePaise = START_CREDIT_PAISE
+  let noWelcome = false
   let network: string | undefined
   const ip = clientIp(req)
   if (IP_GATE !== 'off' && ip && !(await getAccount(who.sub))) {
@@ -41,10 +42,12 @@ export async function GET(req: Request) {
     if (!claim.first) {
       console.log('[gate] repeat network', JSON.stringify({ sub: who.sub, holder: claim.holder, mode: IP_GATE }))
       if (IP_GATE === 'block') return bounce('one_per_network')
-      welcomePaise = 0
+      noWelcome = true
     }
   }
-  await ensureAccount(who, { welcomePaise, network })
+  // Rupees for India, dollars for everyone else, fixed at sign-up.
+  const currency = currencyForCountry(req.headers.get('x-vercel-ip-country'), DEFAULT_CURRENCY)
+  await ensureAccount(who, { noWelcome, network, currency })
   // Their own Vaaya wallet, when the feature is on. Best-effort by design.
   await attachCustomer(who.sub, who.email)
   const res = NextResponse.redirect(`${APP_URL}/app`)

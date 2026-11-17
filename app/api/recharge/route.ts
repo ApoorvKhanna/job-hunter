@@ -31,6 +31,7 @@ export async function POST(req: Request) {
   }
 
   const account = await ensureAccount(session)
+  if (account.currency !== 'inr') return NextResponse.json({ ok: false, code: 'invalid', message: 'UPI is for rupee accounts.' })
   const paise = amount * 100
   const capPaise = AUTO_CREDIT_INR_PER_DAY * 100
   // No instant credit for an account that has ever had a recharge reversed
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
 
   if (!instant) {
     const a = await addPending(session.sub, paise, check.utr)
-    return NextResponse.json({ ok: true, data: { status: 'pending', balance_paise: a.balancePaise, pending: a.pending.filter((p) => p.status === 'pending').length } })
+    return NextResponse.json({ ok: true, data: { status: 'pending', balance: a.balance, pending: a.pending.filter((p) => p.status === 'pending').length } })
   }
 
   const { account: credited, id } = await addApproved(session.sub, paise, check.utr)
@@ -49,6 +50,6 @@ export async function POST(req: Request) {
   // Rupee credit only. The provider wallet keeps its welcome funding; the
   // operator key covers any call the wallet cannot, so a recharge (verified
   // or not) never moves treasury money.
-  await sendCreditEmail({ to: credited.email, name: credited.name, paise, balancePaise: credited.balancePaise, utr: check.utr })
-  return NextResponse.json({ ok: true, data: { status: 'approved', balance_paise: credited.balancePaise, pending: 0 } })
+  await sendCreditEmail({ to: credited.email, name: credited.name, paise, balancePaise: credited.balance, utr: check.utr })
+  return NextResponse.json({ ok: true, data: { status: 'approved', balance: credited.balance, pending: 0 } })
 }

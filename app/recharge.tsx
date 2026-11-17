@@ -4,7 +4,7 @@ import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
 import { RECHARGE_OPTIONS_INR, inr } from '@/lib/prices'
 
-export default function Recharge({ need, balance, upi, onClose, onCredited }: { need: number; balance: number; upi: { id: string; name: string }; onClose: () => void; onCredited?: (balancePaise: number) => void }) {
+export default function Recharge({ need, balance, upi, onClose, onCredited }: { need: number; balance: number; upi: { id: string; name: string }; onClose: () => void; onCredited?: (balance: number) => void }) {
   const [amount, setAmount] = useState<number>(RECHARGE_OPTIONS_INR[0])
   const [qr, setQr] = useState<string>('')
   const [utr, setUtr] = useState('')
@@ -20,12 +20,12 @@ export default function Recharge({ need, balance, upi, onClose, onCredited }: { 
 
   async function submit() {
     const res = await fetch('/api/recharge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ inr: amount, utr }) })
-    const j = (await res.json()) as { ok: boolean; message?: string; data?: { status?: 'approved' | 'pending'; balance_paise?: number } }
+    const j = (await res.json()) as { ok: boolean; message?: string; data?: { status?: 'approved' | 'pending'; balance?: number } }
     if (j.ok && j.data?.status === 'approved') {
       setState('credited')
-      if (typeof j.data.balance_paise === 'number') {
-        setNewBalance(j.data.balance_paise)
-        onCredited?.(j.data.balance_paise)
+      if (typeof j.data.balance === 'number') {
+        setNewBalance(j.data.balance)
+        onCredited?.(j.data.balance)
       }
     } else if (j.ok) setState('sent')
     else {
@@ -66,7 +66,7 @@ export default function Recharge({ need, balance, upi, onClose, onCredited }: { 
               <p>Scan the QR code with your UPI app to pay ₹{amount}. Or send ₹{amount} to <span className="email">{upi.id}</span>.</p>
               <p><a className="btn ghost sm" href={link}>Open your UPI app</a></p>
               <p style={{ marginTop: 12, marginBottom: 2, fontWeight: 500 }}>After paying, enter your payment reference</p>
-              <p className="muted" style={{ marginBottom: 8 }}>Find the 12-digit UTR in your UPI payment details. Payments up to ₹49 are credited instantly.</p>
+              <p className="muted" style={{ marginBottom: 8 }}>Find the 12-digit UTR in your UPI payment details. Small payments are credited instantly.</p>
               <div className="row">
                 <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="Enter your 12-digit UTR" style={{ maxWidth: 220 }} />
                 <button className="btn sm" onClick={submit} disabled={utr.trim().length < 8}>Submit payment reference</button>

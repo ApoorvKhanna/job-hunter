@@ -1,15 +1,28 @@
 import { redirect } from 'next/navigation'
-import { UPI_ID, UPI_NAME } from '@/lib/env'
 import { ensureAccount } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
+import { payConfig, settleReturn } from '@/lib/stripe'
 import SavedView from './saved'
 
 export const dynamic = 'force-dynamic'
 
-export default async function SavedPage() {
+export default async function SavedPage({ searchParams }: { searchParams: Promise<{ topup?: string; tab?: string }> }) {
   const session = await readSession()
   if (!session) redirect('/')
+  const { topup, tab } = await searchParams
+  await ensureAccount(session)
+  const notice = await settleReturn(session.sub, topup)
   const [items, account] = await Promise.all([listSaved(session.sub), ensureAccount(session)])
-  return <SavedView items={items} balancePaise={account.balancePaise} email={session.email} upi={{ id: UPI_ID, name: UPI_NAME }} />
+  return (
+    <SavedView
+      items={items}
+      balance={account.balance}
+      currency={account.currency}
+      email={session.email}
+      pay={payConfig()}
+      notice={notice}
+      initialTab={tab === 'review' || tab === 'job' || tab === 'email' ? tab : null}
+    />
+  )
 }

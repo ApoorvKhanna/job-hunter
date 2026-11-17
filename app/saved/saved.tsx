@@ -1,16 +1,18 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
-import Recharge from '../recharge'
 import { postedOn } from '@/lib/format'
-import type { SavedEmail, SavedItem, SavedJob, SavedNote } from '@/lib/saved'
+import type { Currency } from '@/lib/prices'
+import type { SavedEmail, SavedItem, SavedJob, SavedNote, SavedReview } from '@/lib/saved'
 
-type Tab = 'note' | 'email' | 'job'
+type Tab = 'note' | 'email' | 'job' | 'review'
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'note', label: 'Email drafts' },
   { id: 'email', label: 'Contacts' },
   { id: 'job', label: 'Jobs' },
+  { id: 'review', label: 'Reviews' },
 ]
 
 function when(at: string): string {
@@ -22,8 +24,25 @@ function when(at: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-export default function SavedView({ items, balancePaise, email, upi }: { items: SavedItem[]; balancePaise: number; email: string; upi: { id: string; name: string } }) {
-  const [tab, setTab] = useState<Tab>('note')
+export default function SavedView({
+  items,
+  balance: startBalance,
+  currency,
+  email,
+  pay,
+  notice,
+  initialTab,
+}: {
+  items: SavedItem[]
+  balance: number
+  currency: Currency
+  email: string
+  pay: PayConfig
+  notice: string | null
+  initialTab: Tab | null
+}) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? (items.some((i) => i.kind === 'note') || !items.some((i) => i.kind === 'review') ? 'note' : 'review'))
+  const [balance, setBalance] = useState(startBalance)
   const [recharge, setRecharge] = useState(false)
   const [q, setQ] = useState('')
 
@@ -31,7 +50,8 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
     const notes = items.filter((i): i is SavedNote => i.kind === 'note')
     const emails = items.filter((i): i is SavedEmail => i.kind === 'email')
     const jobs = items.filter((i): i is SavedJob => i.kind === 'job')
-    return { note: notes, email: emails, job: jobs }
+    const reviews = items.filter((i): i is SavedReview => i.kind === 'review')
+    return { note: notes, email: emails, job: jobs, review: reviews }
   }, [items])
 
   const needle = q.trim().toLowerCase()
@@ -39,11 +59,12 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 
   return (
     <main className="wrap">
-      <Header active="saved" email={email} balance={balancePaise} onRecharge={() => setRecharge(true)} />
-      {recharge ? <Recharge need={0} balance={balancePaise} upi={upi} onClose={() => setRecharge(false)} /> : null}
+      <Header active="saved" email={email} balance={balance} currency={currency} onRecharge={() => setRecharge(true)} />
+      {notice ? <div className="notice ok">{notice}</div> : null}
+      {recharge ? <Credits currency={currency} need={0} balance={balance} pay={pay} returnTo="saved" onClose={() => setRecharge(false)} onCredited={setBalance} /> : null}
 
       <h2 style={{ marginTop: 0 }}>Your saved results</h2>
-      <p className="small muted">Your saved jobs, contacts and email drafts are free to revisit.</p>
+      <p className="small muted">Your reviews, saved jobs, contacts and email drafts are free to revisit.</p>
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -92,6 +113,25 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
         )
       ) : null}
 
+      {tab === 'review' ? (
+        groups.review.filter((r) => match(`${r.roles.join(' ')} ${r.headline}`)).length === 0 ? (
+          <Empty what="review" filtered={!!needle} />
+        ) : (
+          groups.review
+            .filter((r) => match(`${r.roles.join(' ')} ${r.headline}`))
+            .map((r) => (
+              <a className="card review-row" key={r.id} href={`/review/${r.id}`}>
+                <span className="past-score">{r.overall ?? '–'}</span>
+                <span style={{ flex: 1 }}>
+                  <span className="job-title">{r.roles.join(', ')}</span>
+                  {r.headline ? <span className="meta" style={{ display: 'block' }}>{r.headline}</span> : null}
+                </span>
+                <span className="meta" style={{ flexShrink: 0 }}>{when(r.at)} · Open →</span>
+              </a>
+            ))
+        )
+      ) : null}
+
       {tab === 'job' ? (
         groups.job.filter((j) => match(`${j.title} ${j.company} ${j.location}`)).length === 0 ? (
           <Empty what="job" filtered={!!needle} />
@@ -116,6 +156,10 @@ export default function SavedView({ items, balancePaise, email, upi }: { items: 
 }
 
 const EMPTY: Record<Tab, { filtered: [string, string]; none: [string, string] }> = {
+  review: {
+    filtered: ['No reviews match your search.', 'Try a different role.'],
+    none: ['No reviews yet.', 'See where a recruiter’s eye lands on your resume.'],
+  },
   email: {
     filtered: ['No contacts match your search.', 'Try a different company, job title or name.'],
     none: ['No saved contacts yet.', 'Find a contact’s email to save it here.'],
@@ -134,7 +178,7 @@ function Empty({ what, filtered }: { what: Tab; filtered: boolean }) {
   const [head, hint] = EMPTY[what][filtered ? 'filtered' : 'none']
   return (
     <p className="muted">
-      <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{head}</b> {hint}{filtered ? null : <> <a href="/app">Find jobs</a></>}
+      <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{head}</b> {hint}{filtered ? null : what === 'review' ? <> <a href="/review">Start a review</a></> : <> <a href="/jobs">Find jobs</a></>}
     </p>
   )
 }

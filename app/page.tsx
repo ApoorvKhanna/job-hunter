@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
-import { GOOGLE_CLIENT_ID, START_CREDIT_PAISE } from '@/lib/env'
-import { PRICE_PAISE, inr } from '@/lib/prices'
+import { GOOGLE_CLIENT_ID } from '@/lib/env'
+import { visitorCurrency } from '@/lib/ledger'
+import { PRICES, REVIEW_PRICE, WELCOME, money } from '@/lib/prices'
 import { readSession } from '@/lib/session'
 
 export const dynamic = 'force-dynamic'
@@ -18,19 +19,22 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const session = await readSession()
   if (session) redirect('/app')
   const { error } = await searchParams
+  const c = await visitorCurrency()
+  const m = (n: number) => money(n, c)
+  const p = PRICES[c]
   return (
     <main className="landing">
       <nav className="nav">
         <span className="brand">Job Hunter</span>
-        <span className="nav-right small">{inr(START_CREDIT_PAISE)} in granted credits</span>
+        <span className="nav-right small">{m(WELCOME[c])} in free credits</span>
       </nav>
 
       <section className="hero">
         <div className="hero-text">
           <h1>Find jobs that fit. Know who to contact.</h1>
           <p className="muted">
-            Upload your resume to find recent openings, relevant contacts at each company, and an email draft based on
-            your experience. Choose each step as you go. Pay per step. Failed steps aren’t charged.
+            Two ways in. Search fresh openings and reach the people hiring, paying only for the steps you use. Or get a
+            recruiter’s-eye review of your resume and profiles, with exactly what to fix for the roles you want.
           </p>
           {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error}).`}</div> : null}
           <p style={{ margin: '18px 0 8px' }}>
@@ -38,44 +42,72 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               <GoogleMark /> Continue with Google
             </a>
           </p>
-          <p className="small muted" style={{ margin: 0 }}>Start with {inr(START_CREDIT_PAISE)} in granted credits. Add more with UPI whenever you need them.</p>
+          <p className="small muted" style={{ margin: 0 }}>
+            Start with {m(WELCOME[c])} in free credits, enough for a job search. Add more {c === 'inr' ? 'by UPI or card' : 'by card'} whenever you need them.
+          </p>
         </div>
         <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>
       </section>
 
+      <h2 className="lane-title">Job hunt <span>Pay per step. Failed steps are free.</span></h2>
       <div className="stepgrid">
         <div>
-          <span className="num">I</span><Icon d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" />
-          <b>Sign in</b>
-          Get {inr(START_CREDIT_PAISE)} in granted credits. Your jobs, emails and drafts are saved to your account.
-        </div>
-        <div>
-          <span className="num">II</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />
+          <span className="num">I</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />
           <b>Add your resume</b>
           Upload a PDF or DOCX, or paste the text. We suggest job titles from your experience.
-          <span className="price">{inr(PRICE_PAISE.parse)}</span>
+          <span className="price">Free</span>
         </div>
         <div>
-          <span className="num">III</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
+          <span className="num">II</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
           <b>Find matching jobs</b>
           Adjust titles, country and date range, then search recent openings.
-          <span className="price">{inr(PRICE_PAISE.jobs)}</span>
+          <span className="price">{m(p.jobs)}</span>
         </div>
         <div>
-          <span className="num">IV</span><Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 8a5 5 0 0 1 10 0M16 10a2.5 2.5 0 1 0 0-5M17 14.5a4 4 0 0 1 3 4.5" />
+          <span className="num">III</span><Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 8a5 5 0 0 1 10 0M16 10a2.5 2.5 0 1 0 0-5M17 14.5a4 4 0 0 1 3 4.5" />
           <b>Find contacts</b>
-          Managers and recruiters at the company. Look up an email for the one you choose.
-          <span className="price">{inr(PRICE_PAISE.contact)} · email {inr(PRICE_PAISE.email)}</span>
+          Managers and recruiters at the company.
+          <span className="price">{m(p.contact)}</span>
         </div>
         <div>
-          <span className="num">V</span><Icon d="M4 6h16v12H4Zm0 1 8 6 8-6" />
-          <b>Prepare your email</b>
-          A draft from your experience and the role. Review it, copy it, send it when ready.
-          <span className="price">{inr(PRICE_PAISE.draft)}</span>
+          <span className="num">IV</span><Icon d="M4 6h16v12H4Zm0 1 8 6 8-6" />
+          <b>Get their email</b>
+          The work email of the person you choose.
+          <span className="price">{m(p.email)}</span>
+        </div>
+        <div>
+          <span className="num">V</span><Icon d="M5 19h4L19 9l-4-4L5 15v4Zm9-13 4 4" />
+          <b>Draft your note</b>
+          Written from your experience and the role. Review it, send it when ready.
+          <span className="price">{m(p.draft)}</span>
         </div>
       </div>
 
-      <p className="footer">Failed steps aren’t charged. Your jobs, revealed emails and drafts are saved automatically and free to reopen.</p>
+      <h2 className="lane-title">Resume and profile review <span>{m(REVIEW_PRICE[c])}, everything included</span></h2>
+      <div className="stepgrid four">
+        <div>
+          <Icon d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <b>Where the eye goes</b>
+          A heatmap of what a recruiter sees in the first six seconds, and the strong points they skip.
+        </div>
+        <div>
+          <Icon d="M4 4h16v16H4ZM8 10v6M8 7v.01M12 16v-3.5a2 2 0 0 1 4 0V16M12 10v6" />
+          <b>Your profiles, checked</b>
+          LinkedIn, X, GitHub and your website, read against your resume. Add the ones you have.
+        </div>
+        <div>
+          <Icon d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.4 6.7 19.1l1-5.8L3.5 9.2l5.9-.9Z" />
+          <b>Fit for each role</b>
+          Up to three target roles: your fit, the gaps, and the keywords recruiters search for.
+        </div>
+        <div>
+          <Icon d="M5 19h4L19 9l-4-4L5 15v4Zm9-13 4 4" />
+          <b>What to change</b>
+          A rewritten headline, summary and bullets, plus a plan for the next seven days. Saved to your account.
+        </div>
+      </div>
+
+      <p className="footer">Failed steps aren’t charged. Your reviews, jobs, emails and drafts are saved automatically and free to reopen.</p>
     </main>
   )
 }

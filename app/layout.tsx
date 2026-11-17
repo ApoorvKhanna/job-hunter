@@ -8,7 +8,7 @@ const serif = Cormorant_Garamond({ variable: '--font-serif', subsets: ['latin'],
 
 export const metadata: Metadata = {
   title: 'Job Hunter',
-  description: 'Find jobs that fit. Know who to contact. Upload your resume to find recent openings, contacts at each company, and an email draft. Granted credits to start.',
+  description: 'Find jobs that fit and know who to contact, or see where a recruiter\u2019s eye lands on your resume with a review of your LinkedIn, X, GitHub and site. Free credits to start.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

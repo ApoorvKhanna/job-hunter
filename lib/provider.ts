@@ -97,13 +97,20 @@ export async function runFor<T>(
   return out.ok ? { ...out, settledBy: 'operator' } : out
 }
 
+export type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string | ChatPart[] }
+
 /** One chat completion through the OpenAI-compatible router. */
-export async function chat(messages: Array<{ role: 'system' | 'user'; content: string }>, maxTokens = 700): Promise<ProviderResult<string>> {
+export async function chat(
+  messages: ChatMessage[],
+  maxTokens = 700,
+  opts: { model?: string; temperature?: number } = {},
+): Promise<ProviderResult<string>> {
   const { status, body } = await call('/api/llm/v1/chat/completions', {
-    model: 'anthropic/claude-haiku-4.5',
+    model: opts.model ?? 'anthropic/claude-haiku-4.5',
     messages,
     max_tokens: maxTokens,
-    temperature: 0.3,
+    temperature: opts.temperature ?? 0.3,
     stream: false,
   })
   if (status < 400) {

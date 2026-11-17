@@ -1,15 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
-import Recharge from '../recharge'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
 import { plural, postedOn } from '@/lib/format'
-import { PRICE_PAISE, inr } from '@/lib/prices'
+import { type Currency, PRICES, type Step, priceLabel } from '@/lib/prices'
 import type { Job, Person, Profile } from '@/lib/types'
 import { VARIANT_LABELS, type Variant } from '@/lib/variants'
 
-type Api<T> = { ok: true; data: T; balance_paise: number; charged_paise?: number } | { ok: false; code: string; message: string; balance_paise?: number; need_paise?: number }
+type Api<T> = { ok: true; data: T; balance: number; charged?: number } | { ok: false; code: string; message: string; balance?: number; need?: number }
 
 const STEPS = ['Resume', 'Profile', 'Jobs', 'Contacts', 'Email'] as const
 type StepIndex = 0 | 1 | 2 | 3 | 4
@@ -34,24 +34,31 @@ export interface SavedSummary {
   recent: Array<{ subject: string; company: string; person: string | null }>
 }
 
+// Where the flow was, kept for the trip to the payment page and back.
+const SNAPSHOT = 'jh_flow'
+interface Snapshot { at: number; step: StepIndex; profile: Profile | null; days: number; jobs: Job[] | null; jobsPage: number; moreJobs: boolean; job: Job | null; people: Person[] | null; emails: Record<string, { work: string[]; personal: string[] }>; person: Person | null; note: string | null }
+
 export default function Flow({
-  name,
   email,
-  balancePaise,
-  upi,
+  balance: startBalance,
+  currency,
+  pay,
   saved,
+  notice,
 }: {
-  name: string
   email: string
-  balancePaise: number
-  upi: { id: string; name: string }
+  balance: number
+  currency: Currency
+  pay: PayConfig
   saved: SavedSummary
+  notice: string | null
 }) {
   const [step, setStep] = useState<StepIndex>(0)
-  const [balance, setBalance] = useState(balancePaise)
+  const [balance, setBalance] = useState(startBalance)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [recharge, setRecharge] = useState<{ need: number } | null>(null)
+  const price = (s: Step) => priceLabel(PRICES[currency][s], currency)
 
   const [resume, setResume] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -69,8 +76,29 @@ export default function Flow({
     try {
       const saved = localStorage.getItem('jh_resume')
       if (saved) setResume(saved)
+      // Back from paying (or a reload): pick up where the flow was.
+      const snap = JSON.parse(sessionStorage.getItem(SNAPSHOT) ?? 'null') as Snapshot | null
+      if (snap && Date.now() - snap.at < 2 * 3600_000 && snap.step > 0) {
+        setProfile(snap.profile)
+        setDays(snap.days)
+        setJobs(snap.jobs)
+        setJobsPage(snap.jobsPage)
+        setMoreJobs(snap.moreJobs)
+        setJob(snap.job)
+        setPeople(snap.people)
+        setEmails(snap.emails)
+        setPerson(snap.person)
+        setNote(snap.note)
+        setStep(snap.step)
+      }
     } catch {}
   }, [])
+  useEffect(() => {
+    try {
+      const snap: Snapshot = { at: Date.now(), step, profile, days, jobs, jobsPage, moreJobs, job, people, emails, person, note }
+      sessionStorage.setItem(SNAPSHOT, JSON.stringify(snap))
+    } catch {}
+  }, [step, profile, days, jobs, jobsPage, moreJobs, job, people, emails, person, note])
   useEffect(() => {
     try {
       localStorage.setItem('jh_resume', resume)
@@ -81,9 +109,9 @@ export default function Flow({
   }, [step])
 
   const settle = useCallback(<T,>(r: Api<T>): T | null => {
-    if (r.balance_paise != null) setBalance(r.balance_paise)
+    if (r.balance != null) setBalance(r.balance)
     if (!r.ok) {
-      if (r.code === 'recharge') setRecharge({ need: r.need_paise ?? 0 })
+      if (r.code === 'recharge') setRecharge({ need: r.need ?? 0 })
       else setError(r.message)
       return null
     }
@@ -97,7 +125,13 @@ export default function Flow({
     const data = settle(await post<Profile>('/api/parse', { resume }))
     setBusy(null)
     if (data) {
-      setProfile(data)
+      // Coming from a review: search the roles it was run for.
+      let roles: string[] = []
+      try {
+        roles = JSON.parse(localStorage.getItem('jh_roles') ?? '[]') as string[]
+        localStorage.removeItem('jh_roles')
+      } catch {}
+      setProfile(roles.length ? { ...data, titles: roles.slice(0, 5) } : data)
       setStep(1)
     }
   }
@@ -175,13 +209,14 @@ export default function Flow({
 
   return (
     <main className="wrap">
-      <Header active="search" email={email} balance={balance} onRecharge={() => setRecharge({ need: 0 })} />
+      <Header active="jobs" email={email} balance={balance} currency={currency} onRecharge={() => setRecharge({ need: 0 })} />
 
       <StatusBar step={step} onJump={(i) => i < step && setStep(i)} />
       {loading ? <p className="loading" role="status"><span className="spin" /> {loading}</p> : null}
 
+      {notice ? <div className="notice ok">{notice}</div> : null}
       {error ? <div className="notice err">{error}</div> : null}
-      {recharge ? <Recharge need={recharge.need} balance={balance} upi={upi} onClose={() => setRecharge(null)} onCredited={setBalance} /> : null}
+      {recharge ? <Credits currency={currency} need={recharge.need} balance={balance} pay={pay} returnTo="jobs" onClose={() => setRecharge(null)} onCredited={setBalance} /> : null}
 
       {step === 0 && saved.jobs + saved.contacts + saved.emails > 0 ? (
         <a className="recap" href="/saved">
@@ -203,7 +238,7 @@ export default function Flow({
       ) : null}
 
       {step === 0 ? (
-        <ResumeStep resume={resume} setResume={setResume} busy={busy} onNext={readResume} setError={setError} />
+        <ResumeStep resume={resume} setResume={setResume} busy={busy} onNext={readResume} setError={setError} parsePrice={price('parse')} />
       ) : null}
 
       {step === 1 && profile ? (
@@ -242,7 +277,7 @@ export default function Flow({
           </div>
           <div className="row">
             <button className="btn" onClick={() => findJobs(0)} disabled={busy !== null || profile.titles.filter((t) => t.trim()).length === 0}>
-              {busy === 'jobs' ? <span className="spin" /> : null} Find matching jobs <span className="price">· {inr(PRICE_PAISE.jobs)}</span>
+              {busy === 'jobs' ? <span className="spin" /> : null} Find matching jobs <span className="price">· {price('jobs')}</span>
             </button>
             <button className="btn ghost" onClick={() => setStep(0)}>Back to resume</button>
           </div>
@@ -265,7 +300,7 @@ export default function Flow({
                   {j.hiring_team.length ? <div className="small muted">On the posting: {j.hiring_team.map((h) => h.name).join(', ')}</div> : null}
                 </div>
                 <button className="btn sm" onClick={() => pickJob(j)} disabled={busy !== null}>
-                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} Find contacts <span className="price">· {inr(PRICE_PAISE.contact)}</span>
+                  {busy === 'people' && job?.id === j.id ? <span className="spin" /> : null} Find contacts <span className="price">· {price('contact')}</span>
                 </button>
               </div>
             </div>
@@ -273,7 +308,7 @@ export default function Flow({
           <div className="row">
             {jobs.length > 0 && moreJobs ? (
               <button className="btn" onClick={() => findJobs(jobsPage + 1)} disabled={busy !== null}>
-                {busy === 'more' ? <span className="spin" /> : null} Find more jobs <span className="price">· {inr(PRICE_PAISE.jobs)}</span>
+                {busy === 'more' ? <span className="spin" /> : null} Find more jobs <span className="price">· {price('jobs')}</span>
               </button>
             ) : null}
             <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button>
@@ -301,11 +336,11 @@ export default function Flow({
                     {p.linkedin_url ? <a className="btn ghost sm" href={p.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
                     {!e ? (
                       <button className="btn ghost sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
-                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Find email <span className="price">· {inr(PRICE_PAISE.email)}</span>
+                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Find email <span className="price">· {price('email')}</span>
                       </button>
                     ) : null}
                     <button className="btn sm" onClick={() => draft(p)} disabled={busy !== null}>
-                      {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft email <span className="price">· {inr(PRICE_PAISE.draft)}</span>
+                      {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft email <span className="price">· {price('draft')}</span>
                     </button>
                   </div>
                 </div>
@@ -313,7 +348,7 @@ export default function Flow({
             })}
           </div>
           <div className="row">
-            <button className="btn ghost" onClick={() => draft(null)} disabled={busy !== null}>Draft without a contact <span className="price">· {inr(PRICE_PAISE.draft)}</span></button>
+            <button className="btn ghost" onClick={() => draft(null)} disabled={busy !== null}>Draft without a contact <span className="price">· {price('draft')}</span></button>
             <button className="btn ghost sm" onClick={() => setStep(2)}>Back to jobs</button>
           </div>
         </section>
@@ -337,7 +372,7 @@ export default function Flow({
             <span className="small muted">Refine your draft</span>
             {VARIANT_LABELS.map((v) => (
               <button key={v.id} className="btn ghost sm" onClick={() => rewrite(v.id)} disabled={busy !== null}>
-                {busy === `v:${v.id}` ? <span className="spin" /> : null} {v.label} <span className="price">· {inr(PRICE_PAISE.draft)}</span>
+                {busy === `v:${v.id}` ? <span className="spin" /> : null} {v.label} <span className="price">· {price('draft')}</span>
               </button>
             ))}
           </div>
@@ -366,7 +401,7 @@ function StatusBar({ step, onJump }: { step: StepIndex; onJump: (i: StepIndex) =
   )
 }
 
-function ResumeStep({ resume, setResume, busy, onNext, setError }: { resume: string; setResume: (s: string) => void; busy: string | null; onNext: () => void; setError: (s: string | null) => void }) {
+function ResumeStep({ resume, setResume, busy, onNext, setError, parsePrice }: { resume: string; setResume: (s: string) => void; busy: string | null; onNext: () => void; setError: (s: string | null) => void; parsePrice: string }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -407,7 +442,7 @@ function ResumeStep({ resume, setResume, busy, onNext, setError }: { resume: str
       <textarea value={resume} onChange={(e) => setResume(e.target.value)} placeholder="Paste your resume text here" spellCheck={false} />
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={onNext} disabled={busy !== null || uploading || resume.trim().length < 80}>
-          {busy === 'parse' ? <span className="spin" /> : null} Analyse resume <span className="price">· {inr(PRICE_PAISE.parse)}</span>
+          {busy === 'parse' ? <span className="spin" /> : null} Analyse resume <span className="price">· {parsePrice}</span>
         </button>
         <span className="small muted">{resume.trim().length < 80 ? 'Add your resume to continue.' : `${resume.trim().split(/\s+/).length} words`}</span>
       </div>

@@ -35,13 +35,28 @@ export const CUSTOMER_BUDGET_CENTS = Math.round(Number(process.env.CUSTOMER_BUDG
 // First funding, in cents. Mirrors the welcome credit at the app's ₹1 ≈ 1¢ mapping.
 export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 49))
 
-// Money. Balances are integer paise. Every new account starts with this.
-export const START_CREDIT_PAISE = Math.round(Number(process.env.START_CREDIT_INR ?? 49) * 100)
+// Money. Prices, the welcome credit and top-up amounts live in lib/prices.ts.
+// Balances are integer minor units (paise or cents) of the account's currency.
+// Where we cannot tell the visitor's country (local dev), new accounts use this.
+export const DEFAULT_CURRENCY: 'inr' | 'usd' = process.env.DEFAULT_CURRENCY === 'usd' ? 'usd' : 'inr'
+
+// Stripe: card and UPI top-ups for every account. Both keys, or Stripe stays
+// off and India falls back to the manual UPI QR below.
+export const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? ''
+export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? ''
+
+// Manual UPI (pay the QR, type the UTR). Only offered while Stripe is off.
 export const UPI_ID = process.env.UPI_ID ?? ''
 // Recharges up to this much per account per day are credited the moment the
 // UTR is entered (and reviewed later on /admin); larger ones wait for approval.
-export const AUTO_CREDIT_INR_PER_DAY = Math.round(Number(process.env.AUTO_CREDIT_INR_PER_DAY ?? 49))
+export const AUTO_CREDIT_INR_PER_DAY = Math.round(Number(process.env.AUTO_CREDIT_INR_PER_DAY ?? 99))
 export const UPI_NAME = process.env.UPI_NAME ?? APP_NAME
+
+// The resume + profile review. A vision-capable model on the provider's
+// router; it falls back to reading the text layout when images are refused.
+export const REVIEW_MODEL = process.env.REVIEW_MODEL || 'anthropic/claude-sonnet-4.5'
+// Optional. Lifts GitHub's 60-requests-an-hour limit for profile reads.
+export const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? ''
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 
 export function missingConfig(): string[] {

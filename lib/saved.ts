@@ -35,9 +35,20 @@ export interface SavedNote {
   person: string | null
   to: string | null
 }
-export type SavedItem = SavedJob | SavedEmail | SavedNote
+/** A finished resume + profile review. The full report lives in its own
+ *  blob (lib/review-store.ts); this is the line on the saved page. */
+export interface SavedReview {
+  kind: 'review'
+  at: string
+  id: string
+  roles: string[]
+  overall: number | null
+  headline: string
+  links: { linkedin?: string; x?: string; github?: string; site?: string }
+}
+export type SavedItem = SavedJob | SavedEmail | SavedNote | SavedReview
 
-const CAPS = { job: 150, email: 150, note: 100 } as const
+const CAPS = { job: 150, email: 150, note: 100, review: 50 } as const
 const path = (sub: string) => `saved/${sub}.json`
 
 async function load(sub: string): Promise<{ items: SavedItem[]; etag: string } | null> {
@@ -67,10 +78,16 @@ export async function saveItems(sub: string, incoming: SavedItem[]): Promise<voi
       const merged = [...incoming, ...(found?.items ?? [])]
       const seen = new Set<string>()
       const kept: SavedItem[] = []
-      const counts: Record<string, number> = { job: 0, email: 0, note: 0 }
+      const counts: Record<string, number> = { job: 0, email: 0, note: 0, review: 0 }
       for (const it of merged) {
         const key =
-          it.kind === 'job' ? `job:${it.id}` : it.kind === 'email' ? `email:${it.linkedin_url}` : `note:${it.at}:${it.subject}`
+          it.kind === 'job'
+            ? `job:${it.id}`
+            : it.kind === 'email'
+              ? `email:${it.linkedin_url}`
+              : it.kind === 'review'
+                ? `review:${it.id}`
+                : `note:${it.at}:${it.subject}`
         if (seen.has(key)) continue
         if (counts[it.kind] >= CAPS[it.kind]) continue
         seen.add(key)

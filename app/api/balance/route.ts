@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { UPI_ID, UPI_NAME } from '@/lib/env'
 import { ensureAccount } from '@/lib/ledger'
 import { readSession } from '@/lib/session'
+import { payConfig } from '@/lib/stripe'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,10 +12,11 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     data: {
-      balance_paise: a.balancePaise,
+      currency: a.currency,
+      balance: a.balance,
       pending: a.pending.filter((p) => p.status === 'pending').map((p) => ({ paise: p.paise, at: p.at })),
       entries: a.entries.slice(0, 20),
-      upi: { id: UPI_ID, name: UPI_NAME },
+      pay: payConfig(),
     },
   })
 }

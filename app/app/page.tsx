@@ -1,34 +1,36 @@
 import { redirect } from 'next/navigation'
-import { UPI_ID, UPI_NAME } from '@/lib/env'
 import { ensureAccount } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
-import Flow from './flow'
+import { payConfig, settleReturn } from '@/lib/stripe'
+import Home from './home'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AppPage() {
+// The first screen after sign-in: two ways in, one balance.
+export default async function AppPage({ searchParams }: { searchParams: Promise<{ topup?: string }> }) {
   const session = await readSession()
   if (!session) redirect('/')
+  await ensureAccount(session)
+  const notice = await settleReturn(session.sub, (await searchParams).topup)
   const [account, items] = await Promise.all([ensureAccount(session), listSaved(session.sub)])
-  const notes = items.filter((i) => i.kind === 'note')
-  const saved = {
-    jobs: items.filter((i) => i.kind === 'job').length,
-    contacts: items.filter((i) => i.kind === 'email').length,
-    emails: notes.length,
-    recent: notes.slice(0, 3).map((n) => ({
-      subject: n.kind === 'note' ? n.subject : '',
-      company: n.kind === 'note' ? n.company : '',
-      person: n.kind === 'note' ? n.person : null,
-    })),
-  }
+  const reviews = items.filter((i) => i.kind === 'review')
+  const last = reviews[0]?.kind === 'review' ? reviews[0] : null
   return (
-    <Flow
-      name={session.name}
+    <Home
       email={session.email}
-      balancePaise={account.balancePaise}
-      upi={{ id: UPI_ID, name: UPI_NAME }}
-      saved={saved}
+      firstName={session.name.split(' ')[0] ?? ''}
+      balance={account.balance}
+      currency={account.currency}
+      pay={payConfig()}
+      notice={notice}
+      counts={{
+        jobs: items.filter((i) => i.kind === 'job').length,
+        drafts: items.filter((i) => i.kind === 'note').length,
+        contacts: items.filter((i) => i.kind === 'email').length,
+        reviews: reviews.length,
+      }}
+      lastReview={last ? { id: last.id, at: last.at, roles: last.roles, overall: last.overall } : null}
     />
   )
 }
