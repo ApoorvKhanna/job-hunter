@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import CopyButton from '../copy-button'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
+import Icon from '../icons'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
 import { plural, postedOn } from '@/lib/format'
 import { type Currency, PRICES, type Step, priceLabel } from '@/lib/prices'
@@ -213,6 +215,8 @@ export default function Flow({
 
       <StatusBar step={step} onJump={(i) => i < step && setStep(i)} />
       {loading ? <p className="loading" role="status"><span className="spin" /> {loading}</p> : null}
+      {/* Doherty: the shape of the answer shows at once, before the answer. */}
+      {busy === 'jobs' || busy === 'people' ? <Skeletons rows={busy === 'jobs' ? 4 : 3} /> : null}
 
       {notice ? <div className="notice ok">{notice}</div> : null}
       {error ? <div className="notice err">{error}</div> : null}
@@ -361,7 +365,7 @@ export default function Flow({
           <p className="small muted">Review the details and personalise the draft before sending.</p>
           <pre className="note">{note}</pre>
           <div className="row">
-            <CopyDraft text={note} />
+            <CopyButton text={note} label="Copy draft" done="Draft copied" primary />
             {person && emails[person.linkedin_url]?.work[0] ? (
               <a className="btn ghost" href={`mailto:${emails[person.linkedin_url].work[0]}?subject=${encodeURIComponent(note.split('\n')[0].replace(/^Subject:\s*/i, ''))}&body=${encodeURIComponent(note.split('\n').slice(2).join('\n'))}`}>Open in mail</a>
             ) : null}
@@ -405,6 +409,7 @@ function ResumeStep({ resume, setResume, busy, onNext, setError, parsePrice }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [over, setOver] = useState(false)
 
   async function upload(file: File) {
     setUploading(true)
@@ -425,17 +430,24 @@ function ResumeStep({ resume, setResume, busy, onNext, setError, parsePrice }: {
       <h2>Add your resume</h2>
       <p className="small muted">We’ll use your experience to suggest job titles for your search.</p>
       <div
-        className="drop"
-        onDragOver={(e) => e.preventDefault()}
+        className={`drop${over ? ' over' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (!over) setOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+        }}
         onDrop={(e) => {
           e.preventDefault()
+          setOver(false)
           const f = e.dataTransfer.files?.[0]
           if (f) void upload(f)
         }}
       >
         <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,application/pdf" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         <button className="btn ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
-          {uploading ? <span className="spin" /> : null} Upload PDF or DOCX
+          {uploading ? <span className="spin" /> : <Icon name="upload" size={15} weight={500} />} Upload PDF or DOCX
         </button>
         <span className="small muted">{fileName ? `Loaded ${fileName}` : 'Drag and drop a file here, or paste your resume below.'}</span>
       </div>
@@ -451,18 +463,15 @@ function ResumeStep({ resume, setResume, busy, onNext, setError, parsePrice }: {
 }
 
 
-function CopyDraft({ text }: { text: string }) {
-  const [done, setDone] = useState(false)
+function Skeletons({ rows }: { rows: number }) {
   return (
-    <button
-      className="btn"
-      onClick={() => {
-        navigator.clipboard.writeText(text)
-        setDone(true)
-        setTimeout(() => setDone(false), 1400)
-      }}
-    >
-      {done ? 'Draft copied' : 'Copy draft'}
-    </button>
+    <div aria-hidden="true">
+      {Array.from({ length: rows }, (_, i) => (
+        <div className="skel-card" key={i} style={{ opacity: 1 - i * 0.18 }}>
+          <div className="skeleton" style={{ height: 14, width: `${58 - i * 6}%` }} />
+          <div className="skeleton" style={{ height: 11, width: `${82 - i * 9}%` }} />
+        </div>
+      ))}
+    </div>
   )
 }

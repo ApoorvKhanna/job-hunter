@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
+import Icon from '../icons'
 import { type Links, linksFromResume, normalizeLinks } from '@/lib/links'
 import type { PdfCapture } from '@/lib/pdf-client'
 import { type Currency, money } from '@/lib/prices'
@@ -73,6 +74,28 @@ export default function ReviewFlow({
   const [run, setRun] = useState<{ id: string; status: string; stage: string | null; error: string | null } | null>(resumeId ? { id: resumeId, status: 'starting', stage: null, error: null } : null)
   const [tick, setTick] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const roleRefs = useRef<Array<HTMLInputElement | null>>([])
+  const [over, setOver] = useState(false)
+
+  // Postel: take roles however they arrive. A pasted "PM, Growth PM; Lead"
+  // becomes three chips; Enter starts the next one.
+  function setRole(i: number, value: string) {
+    const parts = value.split(/[,;\n]+/)
+    if (parts.length > 1) {
+      const next = [...roles.slice(0, i), ...parts.map((x) => x.trim()).filter(Boolean), ...roles.slice(i + 1)].slice(0, 3)
+      setRoles(next.length ? next : [''])
+      return
+    }
+    setRoles(roles.map((x, j) => (j === i ? value : x)))
+  }
+  function onRoleKey(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (roles[i].trim() && roles.length < 3 && i === roles.length - 1) {
+      setRoles([...roles, ''])
+      setTimeout(() => roleRefs.current[i + 1]?.focus(), 0)
+    } else roleRefs.current[i + 1]?.focus()
+  }
   const m = (n: number) => money(n, currency)
 
   useEffect(() => {
@@ -270,10 +293,17 @@ export default function ReviewFlow({
             </div>
           ) : null}
           <div
-            className="drop big"
-            onDragOver={(e) => e.preventDefault()}
+            className={`drop big${over ? ' over' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!over) setOver(true)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+            }}
             onDrop={(e) => {
               e.preventDefault()
+              setOver(false)
               const f = e.dataTransfer.files?.[0]
               if (f) void upload(f)
             }}
@@ -294,7 +324,7 @@ export default function ReviewFlow({
             ) : (
               <>
                 <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy !== null}>
-                  {busy === 'read' ? <span className="spin" /> : null} Upload your resume (PDF)
+                  {busy === 'read' ? <span className="spin" /> : <Icon name="upload" size={15} weight={500} />} {busy === 'read' ? 'Reading your PDF…' : 'Upload your resume (PDF)'}
                 </button>
                 <span className="small muted">Or drag it here. It stays in your browser until you start the review.</span>
               </>
@@ -331,7 +361,7 @@ export default function ReviewFlow({
             <div className="chips" style={{ marginBottom: 10 }}>
               {roles.map((t, i) => (
                 <span className="chip" key={i}>
-                  <input value={t} placeholder="e.g. Product Manager" onChange={(e) => setRoles(roles.map((x, j) => (j === i ? e.target.value : x)))} aria-label="target role" />
+                  <input ref={(el) => { roleRefs.current[i] = el }} value={t} placeholder="e.g. Product Manager" onChange={(e) => setRole(i, e.target.value)} onKeyDown={(e) => onRoleKey(i, e)} aria-label="target role" enterKeyHint="next" />
                   {roles.length > 1 ? <button onClick={() => setRoles(roles.filter((_, j) => j !== i))} aria-label="Remove role" title="Remove role">×</button> : null}
                 </span>
               ))}

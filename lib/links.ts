@@ -9,7 +9,8 @@ export type SourceState = 'read' | 'failed' | 'skipped'
 export function normalizeLinks(raw: Record<string, unknown> | undefined): Links {
   const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
   const out: Links = {}
-  const li = /linkedin\.com\/in\/([A-Za-z0-9\-_%.]+)/i.exec(s(raw?.linkedin))
+  const lv = s(raw?.linkedin)
+  const li = /linkedin\.com\/in\/([A-Za-z0-9\-_%.]+)/i.exec(lv) ?? /^@?(?:in\/)?([A-Za-z0-9\-_%]{3,100})\/?$/.exec(lv)
   if (li) out.linkedin = `https://www.linkedin.com/in/${li[1].replace(/\/+$/, '')}`
   const xv = s(raw?.x)
   const xm = /(?:^|\/\/|\.)(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})/i.exec(xv) ?? /^@?([A-Za-z0-9_]{1,15})$/.exec(xv)

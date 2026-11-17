@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import CopyButton from '../copy-button'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
 import { postedOn } from '@/lib/format'
@@ -105,7 +106,7 @@ export default function SavedView({
                   <div className="row" style={{ flexShrink: 0 }}>
                     <span className="meta">Saved {when(e.at)}</span>
                     {e.linkedin_url ? <a className="btn ghost sm" href={e.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
-                    {e.emails[0] ? <CopyBtn text={e.emails.join(', ')} label={e.emails.length > 1 ? 'Copy email addresses' : 'Copy email address'} /> : null}
+                    {e.emails[0] ? <CopyButton text={e.emails.join(', ')} label={e.emails.length > 1 ? 'Copy emails' : 'Copy email'} /> : null}
                   </div>
                 </div>
               </div>
@@ -197,26 +198,10 @@ function NoteCard({ n }: { n: SavedNote }) {
         </div>
         <div className="row" style={{ flexShrink: 0 }}>
           <span className="meta">Saved {when(n.at)}</span>
-          <CopyBtn text={full} label="Copy draft" />
+          <CopyButton text={full} label="Copy draft" />
         </div>
       </div>
       <pre className="note">{n.body}</pre>
     </div>
-  )
-}
-
-function CopyBtn({ text, label }: { text: string; label: string }) {
-  const [done, setDone] = useState(false)
-  return (
-    <button
-      className="btn ghost sm"
-      onClick={() => {
-        navigator.clipboard.writeText(text)
-        setDone(true)
-        setTimeout(() => setDone(false), 1400)
-      }}
-    >
-      {done ? 'Copied' : label}
-    </button>
   )
 }

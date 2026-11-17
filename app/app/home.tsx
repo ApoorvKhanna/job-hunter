@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
+import Icon from '../icons'
 import { type Currency, PRICES, REVIEW_PRICE, money } from '@/lib/prices'
 
 export default function Home({
@@ -44,7 +45,7 @@ export default function Home({
       <div className="choose">
         <a className="choice" href="/jobs">
           <span className="choice-kicker">Pay per step</span>
-          <b>Find jobs and the people hiring</b>
+          <span className="choice-head"><Icon name="search" size={22} weight={600} /><b>Find jobs and the people hiring</b></span>
           <span className="choice-body">Upload your resume. Get fresh openings that fit, the managers and recruiters at each company, their email, and a note written from your experience.</span>
           <span className="choice-prices">
             <span>Read resume <i>Free</i></span>
@@ -56,12 +57,12 @@ export default function Home({
           {counts.jobs + counts.drafts + counts.contacts > 0 ? (
             <span className="choice-past">{counts.jobs} saved jobs · {counts.contacts} contacts · {counts.drafts} drafts</span>
           ) : null}
-          <span className="btn">Start a job search →</span>
+          <span className="btn">Start a job search <Icon name="arrow" size={15} weight={500} /></span>
         </a>
 
         <a className="choice feature" href="/review">
           <span className="choice-kicker">One price, all included</span>
-          <b>Resume and profile review</b>
+          <span className="choice-head"><Icon name="eye" size={22} weight={600} /><b>Resume and profile review</b></span>
           <span className="choice-body">See where a recruiter’s eye lands on your resume in the first six seconds. We check your LinkedIn, X, GitHub and website against the roles you want, then tell you exactly what to fix.</span>
           <span className="choice-list">
             <span>Eye-tracking heatmap of your resume</span>
@@ -74,7 +75,7 @@ export default function Home({
               Last review{lastReview.overall != null ? `: ${lastReview.overall}/100` : ''} for {lastReview.roles.join(', ')}
             </span>
           ) : null}
-          <span className="btn">Start a review · {m(REVIEW_PRICE[currency])} →</span>
+          <span className="btn">Start a review · {m(REVIEW_PRICE[currency])} <Icon name="arrow" size={15} weight={500} /></span>
         </a>
       </div>
 

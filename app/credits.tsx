@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Recharge from './recharge'
 import { type Currency, TOP_UPS, money } from '@/lib/prices'
 
@@ -32,6 +32,22 @@ export default function Credits({
   const [amount, setAmount] = useState<number>(short ? fit : options[1] ?? options[0])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const sheet = useRef<HTMLDivElement>(null)
+  const suggested = short ? fit : (options[1] ?? options[0])
+
+  // Staging: bring the sheet to the eye and put focus on the choice. Esc
+  // closes it, like every other sheet people use.
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    sheet.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    sheet.current?.querySelector<HTMLButtonElement>('.chip.on')?.focus({ preventScroll: true })
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   if (!pay.stripe && currency === 'inr' && pay.upi.id) {
     return <Recharge need={need} balance={balance} upi={pay.upi} onClose={onClose} onCredited={onCredited} />
@@ -55,7 +71,7 @@ export default function Credits({
   }
 
   return (
-    <div className="sheet" role="dialog" aria-label="Add credits">
+    <div className="sheet" role="dialog" aria-label="Add credits" ref={sheet}>
       <div className="row between">
         <h2 style={{ margin: 0 }}>Add credits</h2>
         <button className="btn ghost sm" onClick={onClose}>Close</button>
@@ -67,9 +83,12 @@ export default function Credits({
         <div className="notice">Adding credits is not switched on yet. Try again later.</div>
       ) : (
         <>
-          <div className="chips" style={{ margin: '12px 0' }}>
+          <div className="chips amounts" style={{ margin: '12px 0' }} role="radiogroup" aria-label="Amount">
             {options.map((v) => (
-              <button key={v} className={`chip${amount === v ? ' on' : ''}`} onClick={() => setAmount(v)}>{money(v * 100, currency)}</button>
+              <button key={v} role="radio" aria-checked={amount === v} className={`chip${amount === v ? ' on' : ''}`} onClick={() => setAmount(v)}>
+                {money(v * 100, currency)}
+                {v === suggested ? <span className="amount-tag">{short ? 'Covers this' : 'Suggested'}</span> : null}
+              </button>
             ))}
           </div>
           <button className="btn" onClick={checkout} disabled={busy}>

@@ -1,7 +1,7 @@
 'use client'
 
 import QRCode from 'qrcode'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RECHARGE_OPTIONS_INR, inr } from '@/lib/prices'
 
 export default function Recharge({ need, balance, upi, onClose, onCredited }: { need: number; balance: number; upi: { id: string; name: string }; onClose: () => void; onCredited?: (balance: number) => void }) {
@@ -12,6 +12,16 @@ export default function Recharge({ need, balance, upi, onClose, onCredited }: { 
   const [newBalance, setNewBalance] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
   const link = `upi://pay?pa=${encodeURIComponent(upi.id)}&pn=${encodeURIComponent(upi.name)}&am=${amount}&cu=INR&tn=${encodeURIComponent('Job Hunter recharge')}`
+
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     if (!upi.id) return
@@ -68,7 +78,7 @@ export default function Recharge({ need, balance, upi, onClose, onCredited }: { 
               <p style={{ marginTop: 12, marginBottom: 2, fontWeight: 500 }}>After paying, enter your payment reference</p>
               <p className="muted" style={{ marginBottom: 8 }}>Find the 12-digit UTR in your UPI payment details. Small payments are credited instantly.</p>
               <div className="row">
-                <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="Enter your 12-digit UTR" style={{ maxWidth: 220 }} />
+                <input type="text" inputMode="numeric" value={utr} onChange={(e) => setUtr(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && utr.trim().length >= 8 && submit()} placeholder="Enter your 12-digit UTR" style={{ maxWidth: 220 }} />
                 <button className="btn sm" onClick={submit} disabled={utr.trim().length < 8}>Submit payment reference</button>
               </div>
               {state === 'error' ? <p style={{ color: 'var(--err)' }}>{msg}</p> : null}

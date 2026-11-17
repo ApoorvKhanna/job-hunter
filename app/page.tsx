@@ -3,6 +3,7 @@ import { GOOGLE_CLIENT_ID } from '@/lib/env'
 import { visitorCurrency } from '@/lib/ledger'
 import { PRICES, REVIEW_PRICE, WELCOME, money } from '@/lib/prices'
 import { readSession } from '@/lib/session'
+import Icon from './icons'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,31 +53,31 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <h2 className="lane-title">Job hunt <span>Pay per step. Failed steps are free.</span></h2>
       <div className="stepgrid">
         <div>
-          <span className="num">I</span><Icon d="M7 3h7l4 4v14H7Zm7 0v4h4M9.5 12h5M9.5 15.5h5" />
+          <span className="num">I</span><Icon name="resume" size={18} weight={600} />
           <b>Add your resume</b>
           Upload a PDF or DOCX, or paste the text. We suggest job titles from your experience.
           <span className="price">Free</span>
         </div>
         <div>
-          <span className="num">II</span><Icon d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Zm5-1.5L20 20" />
+          <span className="num">II</span><Icon name="search" size={18} weight={600} />
           <b>Find matching jobs</b>
           Adjust titles, country and date range, then search recent openings.
           <span className="price">{m(p.jobs)}</span>
         </div>
         <div>
-          <span className="num">III</span><Icon d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 8a5 5 0 0 1 10 0M16 10a2.5 2.5 0 1 0 0-5M17 14.5a4 4 0 0 1 3 4.5" />
+          <span className="num">III</span><Icon name="people" size={18} weight={600} />
           <b>Find contacts</b>
           Managers and recruiters at the company.
           <span className="price">{m(p.contact)}</span>
         </div>
         <div>
-          <span className="num">IV</span><Icon d="M4 6h16v12H4Zm0 1 8 6 8-6" />
+          <span className="num">IV</span><Icon name="mail" size={18} weight={600} />
           <b>Get their email</b>
           The work email of the person you choose.
           <span className="price">{m(p.email)}</span>
         </div>
         <div>
-          <span className="num">V</span><Icon d="M5 19h4L19 9l-4-4L5 15v4Zm9-13 4 4" />
+          <span className="num">V</span><Icon name="pen" size={18} weight={600} />
           <b>Draft your note</b>
           Written from your experience and the role. Review it, send it when ready.
           <span className="price">{m(p.draft)}</span>
@@ -86,22 +87,22 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <h2 className="lane-title">Resume and profile review <span>{m(REVIEW_PRICE[c])}, everything included</span></h2>
       <div className="stepgrid four">
         <div>
-          <Icon d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <Icon name="eye" size={18} weight={600} />
           <b>Where the eye goes</b>
           A heatmap of what a recruiter sees in the first six seconds, and the strong points they skip.
         </div>
         <div>
-          <Icon d="M4 4h16v16H4ZM8 10v6M8 7v.01M12 16v-3.5a2 2 0 0 1 4 0V16M12 10v6" />
+          <Icon name="profile" size={18} weight={600} />
           <b>Your profiles, checked</b>
           LinkedIn, X, GitHub and your website, read against your resume. Add the ones you have.
         </div>
         <div>
-          <Icon d="M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.4 6.7 19.1l1-5.8L3.5 9.2l5.9-.9Z" />
+          <Icon name="star" size={18} weight={600} />
           <b>Fit for each role</b>
           Up to three target roles: your fit, the gaps, and the keywords recruiters search for.
         </div>
         <div>
-          <Icon d="M5 19h4L19 9l-4-4L5 15v4Zm9-13 4 4" />
+          <Icon name="pen" size={18} weight={600} />
           <b>What to change</b>
           A rewritten headline, summary and bullets, plus a plan for the next seven days. Saved to your account.
         </div>
@@ -109,14 +110,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
 
       <p className="footer">Failed steps aren’t charged. Your reviews, jobs, emails and drafts are saved automatically and free to reopen.</p>
     </main>
-  )
-}
-
-function Icon({ d }: { d: string }) {
-  return (
-    <svg className="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={d} />
-    </svg>
   )
 }
 
