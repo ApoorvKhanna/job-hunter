@@ -1,6 +1,6 @@
 // The only file that talks to the data backend, with the operator's key.
 import { PROVIDER_API_KEY, PROVIDER_URL } from './env'
-import { customerToken, forgetToken } from './customer'
+import { customerToken, customersEnabled, forgetToken } from './customer'
 import { ensureFunded, refreshCustomer } from './customer-flow'
 import type { Account } from './ledger'
 
@@ -58,7 +58,9 @@ export async function runFor<T>(
   params: Record<string, unknown>,
   maxCostCents: number,
 ): Promise<ProviderResult<T> & { settledBy?: 'customer' | 'operator' }> {
-  const cust = await refreshCustomer(account)
+  // The switch covers accounts that already have a wallet too, not just new
+  // sign-ups: off means every call settles on the operator key.
+  const cust = customersEnabled() ? await refreshCustomer(account) : null
   if (cust?.status === 'ready') {
     const funded = cust.fundedCents > 0 || (await ensureFunded({ ...account, customer: cust }))
     if (funded) {
