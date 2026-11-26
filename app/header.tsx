@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import posthog from 'posthog-js'
+import { analyticsOn } from '@/lib/analytics'
 import { type Currency, PRICES, money } from '@/lib/prices'
 
 export type TabId = 'home' | 'jobs' | 'review' | 'saved'
@@ -8,6 +10,10 @@ export type TabId = 'home' | 'jobs' | 'review' | 'saved'
 // The signed-in header. Every page renders exactly this, so the balance,
 // Add credits and sign out never move or disappear as you switch tabs.
 export default function Header({ active, email, balance, currency, onRecharge }: { active: TabId; email: string; balance: number; currency: Currency; onRecharge: () => void }) {
+  // Tie this browser's PostHog events to the signed-in account.
+  useEffect(() => {
+    if (email && analyticsOn()) posthog.identify(email, { email, currency })
+  }, [email, currency])
   const tab = (id: TabId, href: string, label: string) =>
     active === id ? <span className="navlink on" aria-current="page">{label}</span> : <a className="navlink" href={href}>{label}</a>
   const low = balance < PRICES[currency].jobs
@@ -37,7 +43,7 @@ export default function Header({ active, email, balance, currency, onRecharge }:
           <span className="amt" title={`Balance for ${email}`}><span className="amt-label">Balance:</span> {money(balance, currency)}</span>
           <button className="go" onClick={onRecharge}>Add credits</button>
         </span>
-        <form action="/api/auth/logout" method="post"><button className="btn ghost sm" type="submit">Sign out</button></form>
+        <form action="/api/auth/logout" method="post" onSubmit={() => { if (analyticsOn()) posthog.reset() }}><button className="btn ghost sm" type="submit">Sign out</button></form>
       </div>
     </nav>
   )

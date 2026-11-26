@@ -11,6 +11,7 @@
     "@vercel/blob": "^2.8.0",
     "mammoth": "^1.12.2",
     "next": "15.5.18",
+    "posthog-js": "1.396.2",
     "qrcode": "^1.5.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",
