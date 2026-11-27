@@ -192,7 +192,7 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
             <>
               <p className="small" style={{ margin: '12px 0 4px' }}><b>Subject:</b> {preview.sample.subject}</p>
               <pre className="note" style={{ whiteSpace: 'pre-wrap' }}>{preview.sample.text}</pre>
-              <p className="small muted">The balance line and month change per person (shown below). Warm-up: sending day {preview.today.day}, {preview.today.sentToday} of {preview.today.limit} sent today across both groups.</p>
+              <p className="small muted">The balance line and month change per person (shown below). Sends by itself every day at 10:00 IST, {preview.today.limit} a day across both groups (launch day first). Today: {preview.today.sentToday} of {preview.today.limit} sent.</p>
             </>
           ) : <p className="muted">Nobody left to send to.</p>}
           <ul className="small" style={{ maxHeight: 260, overflow: 'auto', paddingLeft: 18 }}>

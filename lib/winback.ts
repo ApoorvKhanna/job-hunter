@@ -13,8 +13,10 @@
 //     other promotional stacking: it should read like a note from a person.
 //   - A one-click unsubscribe (headers + a line in the body), so people who do
 //     not want it unsubscribe instead of reporting spam.
-//   - A daily warm-up cap (WARMUP), counted across both groups, so the domain
-//     builds a reputation before it sends in volume.
+//   - A daily cap (DAILY_LIMIT, per calendar day in India time, across both
+//     groups), so the new domain builds a reputation before it sends in volume.
+// A daily cron (/api/cron/winback, 10:00 IST) sends the day's batch: the
+// launch group first, then the earlier group, each with its own copy.
 import { del, list, put } from '@vercel/blob'
 import { isBlocked } from './blocks'
 import { APP_URL } from './env'
@@ -33,17 +35,18 @@ export const COHORTS: Record<Cohort, { from: string; to: string; label: string }
 
 export const isCohort = (c: unknown): c is Cohort => c === 'launch' || c === 'earlier'
 
-/** Most notes per sending day: day 1 of sending, day 2, ... and then the last
- *  number from there on. A new domain starts small (10-20 a day is the usual
- *  advice) and ramps as nobody complains. */
-export const WARMUP = [20, 35, 60, 100, 150] as const
+/** Most notes per calendar day (India time), across both groups. Apoorv asked
+ *  for 20 a day (2026-11-27); a new domain starts at 10-20 a day. */
+export const DAILY_LIMIT = 20
 
 export interface Recipient { sub: string; email: string; name: string; createdAt: string; line: string }
 export interface Letter { subject: string; text: string; html: string }
 
 const marker = (sub: string) => `winback/${sub}.json`
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
-const DAY = 86_400_000
+const IST_MS = 5.5 * 3600e3
+/** "2026-11-28": the calendar day in India time. */
+const istDay = (t: number) => new Date(t + IST_MS).toISOString().slice(0, 10)
 
 function firstName(name: string): string {
   return (name.trim().split(/\s+/)[0] || 'there').toLowerCase()
@@ -117,15 +120,14 @@ async function listAll(prefix: string): Promise<Array<{ name: string; at: number
   return out
 }
 
-/** How many more notes may go out today under the warm-up, across both groups.
- *  Day 1 is the day of the first note ever sent. */
+/** How many more notes may go out today (calendar day, India time), across
+ *  both groups. `day` is which sending day this is, counting today. */
 export async function allowanceToday(now = Date.now()): Promise<{ limit: number; sentToday: number; left: number; day: number }> {
   const markers = await listAll('winback/')
-  const first = markers.length ? Math.min(...markers.map((m) => m.at)) : now
-  const day = Math.floor((now - first) / DAY) + 1
-  const limit = WARMUP[Math.min(day, WARMUP.length) - 1]
-  const sentToday = markers.filter((m) => now - m.at < DAY).length
-  return { limit, sentToday, left: Math.max(0, limit - sentToday), day }
+  const today = istDay(now)
+  const sentToday = markers.filter((m) => istDay(m.at) === today).length
+  const days = new Set([...markers.map((m) => istDay(m.at)), today])
+  return { limit: DAILY_LIMIT, sentToday, left: Math.max(0, DAILY_LIMIT - sentToday), day: days.size }
 }
 
 /** Everyone in the group who never paid, is not blocked, did not opt out, and
@@ -170,7 +172,7 @@ export async function sendAll(cohort: Cohort, now = Date.now()): Promise<{ sent:
   if (!ownSender()) return { sent: 0, failed: 0, skipped: 0, left: 0, todayLeft: 0, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first, so this goes from Job Hunter and replies reach you.' }
   const [{ recipients }, today] = await Promise.all([candidates(cohort), allowanceToday(now)])
   if (today.left === 0) {
-    return { sent: 0, failed: 0, skipped: 0, left: recipients.length, todayLeft: 0, error: `Today's warm-up limit is reached (${today.limit} on sending day ${today.day}). Send the rest tomorrow.` }
+    return { sent: 0, failed: 0, skipped: 0, left: recipients.length, todayLeft: 0, error: `Today's limit of ${today.limit} is reached. The rest go out tomorrow at 10:00 IST.` }
   }
   const batch = recipients.slice(0, today.left)
   let sent = 0
@@ -205,4 +207,15 @@ export async function sendAll(cohort: Cohort, now = Date.now()): Promise<{ sent:
   const todayLeft = Math.max(0, today.left - sent)
   console.log('[winback]', JSON.stringify({ cohort, sent, failed, skipped, left, todayLeft, day: today.day }))
   return { sent, failed, skipped, left, todayLeft }
+}
+
+/** The day's batch, for the cron: the launch group first (warmest, and the
+ *  launch copy), then whatever today's limit leaves for the earlier group (its
+ *  own copy). Stops quietly when everyone has had a note. */
+export async function runDaily(now = Date.now()): Promise<{ launch: Awaited<ReturnType<typeof sendAll>> | null; earlier: Awaited<ReturnType<typeof sendAll>> | null; error?: string }> {
+  if (!ownSender()) return { launch: null, earlier: null, error: 'no_sender' }
+  const launch = await sendAll('launch', now)
+  const earlier = launch.todayLeft > 0 ? await sendAll('earlier', now) : null
+  console.log('[winback] daily', JSON.stringify({ day: istDay(now), launch: launch && { sent: launch.sent, left: launch.left }, earlier: earlier && { sent: earlier.sent, left: earlier.left } }))
+  return { launch, earlier }
 }
