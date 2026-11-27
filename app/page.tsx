@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { GOOGLE_CLIENT_ID } from '@/lib/env'
 import { visitorCurrency } from '@/lib/ledger'
-import { PRICES, REVIEW_PRICE, WELCOME, money } from '@/lib/prices'
+import { PACKS, REVIEW_PRICE, money } from '@/lib/prices'
 import { readSession } from '@/lib/session'
 import Icon from './icons'
 
@@ -22,20 +22,20 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const { error } = await searchParams
   const c = await visitorCurrency()
   const m = (n: number) => money(n, c)
-  const p = PRICES[c]
+  const from = m(PACKS[0].price[c])
   return (
     <main className="landing">
       <nav className="nav">
         <span className="brand">Job Hunter</span>
-        <span className="nav-right small">{m(WELCOME[c])} in free credits</span>
+        <span className="nav-right small">Free to search · your first email is on us</span>
       </nav>
 
       <section className="hero">
         <div className="hero-text">
           <h1>Find jobs that fit. Know who to contact.</h1>
           <p className="muted">
-            Two ways in. Search fresh openings and reach the people hiring, paying only for the steps you use. Or get a
-            recruiter’s-eye review of your resume and profiles, with exactly what to fix for the roles you want.
+            Search fresh openings and find the people hiring, free. Pay only for the emails you reveal. Or see your resume
+            the way a recruiter does in the first six seconds, also free.
           </p>
           {error ? <div className="notice err">{ERRORS[error] ?? `Sign-in failed (${error}).`}</div> : null}
           <p style={{ margin: '18px 0 8px' }}>
@@ -44,13 +44,38 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             </a>
           </p>
           <p className="small muted" style={{ margin: 0 }}>
-            Start with {m(WELCOME[c])} in free credits. Add more {c === 'inr' ? 'by UPI or card' : 'by card'} whenever you need them.
+            Free to start, and your first email is on us. Email packs from {from} {c === 'inr' ? 'by UPI or card' : 'by card'}.
           </p>
         </div>
         <div className="art-wrap"><img className="art" src="/odyssey.jpg" alt="A figure in a red cloak on marble steps beneath an arch, a moon in a deep blue sky, red roses below" /></div>
       </section>
 
-      <h2 className="lane-title">Job hunt <span>Pay per step. Failed steps are free.</span></h2>
+      <h2 className="lane-title">What you get <span>One example, start to finish</span></h2>
+      <div className="example" aria-label="An example result">
+        <div>
+          <span className="ex-k">The job</span>
+          <span className="ex-v">Senior Product Manager, Payments</span>
+          <div className="ex-m">A Series B fintech · Bengaluru · posted 3 days ago</div>
+        </div>
+        <div>
+          <span className="ex-k">The person hiring</span>
+          <span className="ex-v">Priya S., Head of Product</span>
+          <div className="ex-m">Picked from the managers and recruiters at the company, with their LinkedIn</div>
+        </div>
+        <div>
+          <span className="ex-k">Their email</span>
+          <span className="ex-mail">priya.s@••••••••.com</span>
+          <div className="ex-m">Their work address, so your note skips the job portal</div>
+        </div>
+        <div>
+          <span className="ex-k">Your note</span>
+          <span className="ex-note">“Hi Priya, I led the UPI AutoPay rollout at my last company and took mandate success from 61% to 84%…”</span>
+          <div className="ex-m">Written from your resume and the posting</div>
+        </div>
+      </div>
+      <p className="example-cap">An illustration with the details changed. Yours comes from your resume and live postings.</p>
+
+      <h2 className="lane-title">Job hunt <span>Free to search. Pay only for emails.</span></h2>
       <div className="stepgrid">
         <div>
           <span className="num">I</span><Icon name="resume" size={18} weight={600} />
@@ -62,34 +87,39 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <span className="num">II</span><Icon name="search" size={18} weight={600} />
           <b>Find matching jobs</b>
           Adjust titles, country and date range, then search recent openings.
-          <span className="price">{m(p.jobs)}</span>
+          <span className="price">Free</span>
         </div>
         <div>
           <span className="num">III</span><Icon name="people" size={18} weight={600} />
           <b>Find contacts</b>
           Managers and recruiters at the company.
-          <span className="price">{m(p.contact)}</span>
+          <span className="price">Free</span>
         </div>
         <div>
           <span className="num">IV</span><Icon name="mail" size={18} weight={600} />
           <b>Get their email</b>
-          The work email of the person you choose.
-          <span className="price">{m(p.email)}</span>
+          The work email of the person you choose. Only used when one is found.
+          <span className="price">1 email credit</span>
         </div>
         <div>
           <span className="num">V</span><Icon name="pen" size={18} weight={600} />
           <b>Draft your note</b>
           Written from your experience and the role. Review it, send it when ready.
-          <span className="price">{m(p.draft)}</span>
+          <span className="price">Free</span>
         </div>
       </div>
 
-      <h2 className="lane-title">Resume and profile review <span>{m(REVIEW_PRICE[c])}, everything included</span></h2>
+      <p className="small muted" style={{ margin: '10px 0 0' }}>
+        Emails come in packs that never expire: {PACKS.map((k) => `${k.emails} for ${m(k.price[c])}`).join(', ')}. Every pack adds deep searches, which look through a second, larger job database when the free search comes back thin. Free searches have a daily limit.
+      </p>
+
+      <h2 className="lane-title">Resume and profile review <span>6-second scan free · full review {m(REVIEW_PRICE[c])}</span></h2>
       <div className="stepgrid four">
         <div>
           <Icon name="eye" size={18} weight={600} />
           <b>Where the eye goes</b>
           A heatmap of what a recruiter sees in the first six seconds, and the strong points they skip.
+          <span className="price">Free</span>
         </div>
         <div>
           <Icon name="profile" size={18} weight={600} />
@@ -108,7 +138,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         </div>
       </div>
 
-      <p className="footer">Failed steps aren’t charged. Your reviews, jobs, emails and drafts are saved automatically and free to reopen.</p>
+      <p className="footer">An email credit is used only when an email is found. Your reviews, jobs, emails and drafts are saved automatically and free to reopen.</p>
     </main>
   )
 }

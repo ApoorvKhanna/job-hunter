@@ -1,7 +1,8 @@
 // Reviews, one private blob each (`reviews/<sub>/<id>.json`), plus the page
 // images the heatmap is drawn on (`reviews/<sub>/<id>/p<n>.jpg`). Status
 // moves draft → running → done | failed, written with ETag checks so a double
-// click can never run (or charge) a review twice.
+// click can never run (or charge) a review twice. A draft may carry a free
+// preview (the scan alone) before it is paid for.
 import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 import type { Block, Fixation } from './layout'
 import type { Links, SourceKey, SourceState } from './profiles'
@@ -50,6 +51,8 @@ export interface Review {
     links: Links
     pages: ReviewPage[]
   }
+  /** The free 6-second scan, made before paying. The paid run reuses it. */
+  preview?: { scan: ScanResult; at: string }
   result?: {
     scan: ScanResult
     evaluation: Evaluation

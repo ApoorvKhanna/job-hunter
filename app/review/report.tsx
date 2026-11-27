@@ -8,7 +8,7 @@ import Icon from '../icons'
 import Heatmap, { type HeatMode } from './heatmap'
 import type { Block } from '@/lib/layout'
 import type { Links, SourceKey } from '@/lib/links'
-import { type Currency, money } from '@/lib/prices'
+import { type Currency, type Wallet, money } from '@/lib/prices'
 import type { Review } from '@/lib/review-store'
 
 interface ReportReview {
@@ -112,8 +112,8 @@ function Fill({ text }: { text: string }) {
   )
 }
 
-export default function Report({ email, balance: startBalance, currency, price, pay, review }: { email: string; balance: number; currency: Currency; price: number; pay: PayConfig; review: ReportReview }) {
-  const [balance, setBalance] = useState(startBalance)
+export default function Report({ email, wallet: startWallet, currency, price, pay, review }: { email: string; wallet: Wallet; currency: Currency; price: number; pay: PayConfig; review: ReportReview }) {
+  const [wallet, setWallet] = useState(startWallet)
   const [credits, setCredits] = useState(false)
   const [mode, setMode] = useState<HeatMode>('heat')
   const [page, setPage] = useState(1)
@@ -153,8 +153,8 @@ export default function Report({ email, balance: startBalance, currency, price, 
 
   return (
     <main className="wrap wide">
-      <Header active="review" email={email} balance={balance} currency={currency} onRecharge={() => setCredits(true)} />
-      {credits ? <Credits currency={currency} need={0} balance={balance} pay={pay} returnTo="review" onClose={() => setCredits(false)} onCredited={setBalance} /> : null}
+      <Header active="review" email={email} wallet={wallet} currency={currency} onRecharge={() => setCredits(true)} />
+      {credits ? <Credits currency={currency} wallet={wallet} pay={pay} returnTo="review" onClose={() => setCredits(false)} onCredited={(balance) => setWallet((w) => ({ ...w, balance }))} /> : null}
 
       <header className="report-head">
         <div>

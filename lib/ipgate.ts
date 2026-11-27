@@ -1,10 +1,10 @@
-// One welcome credit per network. Sign-ups are keyed by the client IP's hash:
+// One welcome email per network. Sign-ups are keyed by the client IP's hash:
 // the first Google account seen from an address holds it; later accounts from
-// the same address are either created without the welcome credit (default) or
+// the same address are either created without the welcome email (default) or
 // turned away (`IP_GATE=block`). Existing accounts always sign in.
 //
 // Why credit-only by default: Indian mobile carriers and campus networks put
-// thousands of real people behind one address. Withholding the welcome credit stops
+// thousands of real people behind one address. Withholding the welcome email stops
 // the farm; blocking would lock out the second honest student in a hostel.
 import { createHash } from 'node:crypto'
 import { get, put } from '@vercel/blob'

@@ -5,9 +5,12 @@
 import { BlobPreconditionFailedError, get, put } from '@vercel/blob'
 import { headers } from 'next/headers'
 import { DEFAULT_CURRENCY } from './env'
-import { type Currency, PARSES_PER_DAY, WELCOME, currencyForCountry } from './prices'
+import { type Allowance, type Currency, DAILY, type Pack, WELCOME_EMAILS, type Wallet, currencyForCountry, packLabel } from './prices'
 
-export interface Entry { at: string; kind: 'credit' | 'debit'; amount: number; note: string }
+/** One line of history. `amount` moves the money balance, except on a pack
+ *  purchase (`units` set): there it is what was paid, and the units move
+ *  instead. The admin page sums "Top-up" credits as money paid in. */
+export interface Entry { at: string; kind: 'credit' | 'debit'; amount: number; note: string; units?: { emails: number; deep: number } }
 /** A manual UPI recharge (QR + UTR). Always rupees. */
 export interface Pending {
   id: string
@@ -40,14 +43,24 @@ export interface Account {
   /** Fixed at sign-up from the visitor's country. Accounts from before
    *  currencies existed are rupee accounts. */
   currency: Currency
-  /** Minor units of `currency`. */
+  /** Money, in minor units of `currency`. New accounts start at 0: it holds
+   *  older top-ups and the old welcome credit, and pays for reviews. */
   balance: number
+  /** Email credits. */
+  emails?: number
+  /** Deep searches left. */
+  deep?: number
   entries: Entry[]
   pending: Pending[]
   /** Stripe Checkout sessions already credited. Never trimmed: a trimmed id
    *  could credit twice. */
   topUps?: string[]
-  /** Free resume reads in the last day. */
+  /** Free uses in the last day, per allowance (timestamps). */
+  uses?: Partial<Record<Allowance, string[]>>
+  /** Lifetime count of free uses that succeeded, plus emails and deep
+   *  searches spent. Activity for the admin page, now most steps are free. */
+  counts?: Partial<Record<Allowance | 'email' | 'deep', number>>
+  /** Before `uses`: free resume reads in the last day. */
   parses?: string[]
   /** The user's own Vaaya identity + x402 wallet, when managed customers are on. */
   customer?: CustomerRef
@@ -66,11 +79,33 @@ function normalize(raw: Record<string, unknown>): Account {
   if (a.currency !== 'inr' && a.currency !== 'usd') a.currency = 'inr'
   a.entries = (Array.isArray(a.entries) ? a.entries : []).map((e) => {
     const old = e as Entry & { paise?: number }
-    return { at: old.at, kind: old.kind, amount: typeof old.amount === 'number' ? old.amount : (old.paise ?? 0), note: old.note }
+    return { at: old.at, kind: old.kind, amount: typeof old.amount === 'number' ? old.amount : (old.paise ?? 0), note: old.note, ...(old.units ? { units: old.units } : {}) }
   })
   if (!Array.isArray(a.pending)) a.pending = []
+  if (typeof a.emails !== 'number') a.emails = 0
+  if (typeof a.deep !== 'number') a.deep = 0
+  if (Array.isArray(a.parses)) {
+    a.uses = { ...a.uses, parse: [...(a.uses?.parse ?? []), ...a.parses] }
+    delete a.parses
+  }
   return a
 }
+
+/** What the account can spend, for the client. */
+export function walletOf(a: Account): Wallet {
+  return { balance: a.balance, emails: a.emails ?? 0, deep: a.deep ?? 0 }
+}
+
+/** Has this account ever put money in (Stripe, manual UPI, or an operator
+ *  credit)? The welcome and refunds do not count. Manual UPI is judged by
+ *  its status alone, so a reversed recharge stops counting. */
+export function hasPaid(a: Account): boolean {
+  if ((a.topUps?.length ?? 0) > 0) return true
+  if (a.pending.some((p) => p.status === 'approved')) return true
+  return a.entries.some((e) => e.kind === 'credit' && e.amount > 0 && !/welcome|refunded|returned|^UPI recharge|^Top-up/i.test(e.note))
+}
+
+export const tierOf = (a: Account): 'free' | 'paid' => (hasPaid(a) ? 'paid' : 'free')
 
 async function load(sub: string): Promise<{ account: Account; etag: string } | null> {
   const blob = await get(path(sub), { access: 'private', useCache: false })
@@ -109,8 +144,8 @@ export async function visitorCurrency(): Promise<Currency> {
   }
 }
 
-/** Get or create the account. New accounts start with the welcome credit in
- *  their currency, unless the sign-in gate withheld it (a repeat network). */
+/** Get or create the account. New accounts start with the welcome email,
+ *  unless the sign-in gate withheld it (a repeat network). */
 export async function ensureAccount(
   who: { sub: string; email: string; name: string },
   opts: { noWelcome?: boolean; network?: string; currency?: Currency } = {},
@@ -118,7 +153,7 @@ export async function ensureAccount(
   const found = await load(who.sub)
   if (found) return found.account
   const currency = opts.currency ?? (await visitorCurrency())
-  const welcome = opts.noWelcome ? 0 : WELCOME[currency]
+  const welcome = opts.noWelcome ? 0 : WELCOME_EMAILS
   const at = new Date().toISOString()
   const account: Account = {
     sub: who.sub,
@@ -126,11 +161,13 @@ export async function ensureAccount(
     name: who.name,
     createdAt: at,
     currency,
-    balance: welcome,
+    balance: 0,
+    emails: welcome,
+    deep: 0,
     entries: [
       welcome > 0
-        ? { at, kind: 'credit', amount: welcome, note: 'Welcome credit' }
-        : { at, kind: 'credit', amount: 0, note: 'No welcome credit: this network already has an account' },
+        ? { at, kind: 'credit', amount: 0, note: `Welcome: ${welcome} free email`, units: { emails: welcome, deep: 0 } }
+        : { at, kind: 'credit', amount: 0, note: 'No welcome email: this network already has an account' },
     ],
     pending: [],
     ...(opts.network ? { network: opts.network } : {}),
@@ -208,21 +245,105 @@ export async function creditTopUp(sub: string, sessionId: string, amount: number
   return { account, credited }
 }
 
-const DAY = 86400000
-
-/** Count one free resume read. False when today's allowance is spent; a
- *  refused read writes nothing. */
-export async function takeParse(sub: string, now = Date.now()): Promise<boolean> {
-  const recent = (list: string[] | undefined) => (list ?? []).filter((t) => now - Date.parse(t) < DAY)
-  const current = await getAccount(sub)
-  if (current && recent(current.parses).length >= PARSES_PER_DAY) return false
-  let allowed = false
-  await mutate(sub, (a) => {
-    const list = recent(a.parses)
-    allowed = list.length < PARSES_PER_DAY
-    if (allowed) a.parses = [new Date(now).toISOString(), ...list]
+/** Credit a paid pack (emails + deep searches) from a Stripe Checkout
+ *  session, exactly once, like creditTopUp. `paid` is what the customer paid,
+ *  kept on the entry for the admin totals; the money balance does not move. */
+export async function creditPack(sub: string, sessionId: string, pack: Pack, paid: number): Promise<{ account: Account; credited: boolean }> {
+  let credited = false
+  const account = await mutate(sub, (a) => {
+    a.topUps ??= []
+    if (a.topUps.includes(sessionId)) return
+    a.topUps.unshift(sessionId)
+    a.emails = (a.emails ?? 0) + pack.emails
+    a.deep = (a.deep ?? 0) + pack.deep
+    a.entries.unshift({ at: new Date().toISOString(), kind: 'credit', amount: paid, note: `Top-up: ${packLabel(pack)}`, units: { emails: pack.emails, deep: pack.deep } })
+    a.entries = a.entries.slice(0, 200)
+    credited = true
   })
-  return allowed
+  return { account, credited }
+}
+
+const DAY = 86400000
+const recentUses = (list: string[] | undefined, now: number) => (list ?? []).filter((t) => now - Date.parse(t) < DAY)
+
+export interface Take { ok: boolean; token: string; limit: number; left: number; tier: 'free' | 'paid' }
+
+/** Take one free use of `kind` for today. A refused take writes nothing.
+ *  Release the token if the step then fails, so failures stay free. */
+export async function takeFree(sub: string, kind: Allowance, now = Date.now()): Promise<Take> {
+  const token = new Date(now).toISOString()
+  const current = await getAccount(sub)
+  if (current) {
+    const tier = tierOf(current)
+    const limit = DAILY[tier][kind]
+    if (recentUses(current.uses?.[kind], now).length >= limit) return { ok: false, token, limit, left: 0, tier }
+  }
+  let take: Take = { ok: false, token, limit: 0, left: 0, tier: 'free' }
+  await mutate(sub, (a) => {
+    const tier = tierOf(a)
+    const limit = DAILY[tier][kind]
+    const list = recentUses(a.uses?.[kind], now)
+    const ok = list.length < limit
+    if (ok) {
+      a.uses = { ...a.uses, [kind]: [token, ...list] }
+      a.counts = { ...a.counts, [kind]: (a.counts?.[kind] ?? 0) + 1 }
+    }
+    take = { ok, token, limit, left: Math.max(0, limit - list.length - (ok ? 1 : 0)), tier }
+  })
+  return take
+}
+
+/** Give back a use taken for a step that then failed. */
+export async function releaseFree(sub: string, kind: Allowance, token: string): Promise<void> {
+  await mutate(sub, (a) => {
+    const list = a.uses?.[kind] ?? []
+    const i = list.indexOf(token)
+    if (i < 0) return
+    a.uses = { ...a.uses, [kind]: [...list.slice(0, i), ...list.slice(i + 1)] }
+    a.counts = { ...a.counts, [kind]: Math.max(0, (a.counts?.[kind] ?? 0) - 1) }
+  })
+}
+
+/** Can this account pay for one email right now? */
+export const canPayEmail = (a: Account, legacyPrice: number) => (a.emails ?? 0) > 0 || a.balance >= legacyPrice
+
+/** Pay for one email found: an email credit when there is one, otherwise the
+ *  legacy price from the money balance. */
+export async function spendEmail(sub: string, legacyPrice: number): Promise<{ account: Account; paidWith: 'credit' | 'money' }> {
+  let paidWith: 'credit' | 'money' = 'credit'
+  const account = await mutate(sub, (a) => {
+    a.counts = { ...a.counts, email: (a.counts?.email ?? 0) + 1 }
+    if ((a.emails ?? 0) > 0) {
+      a.emails = (a.emails ?? 0) - 1
+      paidWith = 'credit'
+      log(a, 'debit', 0, 'email (1 credit)')
+      return
+    }
+    if (a.balance < legacyPrice) throw new InsufficientBalance(a.balance, legacyPrice)
+    a.balance -= legacyPrice
+    paidWith = 'money'
+    log(a, 'debit', legacyPrice, 'email')
+  })
+  return { account, paidWith }
+}
+
+/** Give back a deep search that found nothing new. */
+export async function returnDeep(sub: string): Promise<Account> {
+  return mutate(sub, (a) => {
+    a.deep = (a.deep ?? 0) + 1
+    a.counts = { ...a.counts, deep: Math.max(0, (a.counts?.deep ?? 0) - 1) }
+    log(a, 'credit', 0, 'deep search returned (nothing new)')
+  })
+}
+
+/** Use one deep search. Throws `no_deep` when none are left. */
+export async function useDeep(sub: string): Promise<Account> {
+  return mutate(sub, (a) => {
+    if ((a.deep ?? 0) < 1) throw new Error('no_deep')
+    a.deep = (a.deep ?? 0) - 1
+    a.counts = { ...a.counts, deep: (a.counts?.deep ?? 0) + 1 }
+    log(a, 'debit', 0, 'deep search')
+  })
 }
 
 export async function addPending(sub: string, paise: number, utr: string): Promise<Account> {

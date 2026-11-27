@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { ensureAccount } from '@/lib/ledger'
+import { ensureAccount, walletOf } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
 import { payConfig, settleReturn } from '@/lib/stripe'
@@ -7,7 +7,7 @@ import Home from './home'
 
 export const dynamic = 'force-dynamic'
 
-// The first screen after sign-in: two ways in, one balance.
+// The first screen after sign-in: two ways in.
 export default async function AppPage({ searchParams }: { searchParams: Promise<{ topup?: string }> }) {
   const session = await readSession()
   if (!session) redirect('/')
@@ -20,7 +20,7 @@ export default async function AppPage({ searchParams }: { searchParams: Promise<
     <Home
       email={session.email}
       firstName={session.name.split(' ')[0] ?? ''}
-      balance={account.balance}
+      wallet={walletOf(account)}
       currency={account.currency}
       pay={payConfig()}
       notice={notice}

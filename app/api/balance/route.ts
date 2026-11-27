@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ensureAccount } from '@/lib/ledger'
+import { ensureAccount, walletOf } from '@/lib/ledger'
 import { readSession } from '@/lib/session'
 import { payConfig } from '@/lib/stripe'
 
@@ -14,6 +14,7 @@ export async function GET() {
     data: {
       currency: a.currency,
       balance: a.balance,
+      wallet: walletOf(a),
       pending: a.pending.filter((p) => p.status === 'pending').map((p) => ({ paise: p.paise, at: p.at })),
       entries: a.entries.slice(0, 20),
       pay: payConfig(),

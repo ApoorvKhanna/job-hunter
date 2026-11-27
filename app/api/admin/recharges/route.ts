@@ -51,8 +51,13 @@ export async function GET(req: Request) {
       const spent = debits.reduce((n, e) => n + e.amount, 0) - refunds
       const welcome = a.entries.filter((e) => e.kind === 'credit' && /welcome/i.test(e.note)).reduce((n, e) => n + e.amount, 0)
       const reviews = debits.filter((e) => /^review /.test(e.note)).length - a.entries.filter((e) => e.kind === 'credit' && /^review .*(refunded|returned)/.test(e.note)).length
-      const lastAt = a.entries[0]?.at ?? null
-      people.push({ sub, email: a.email, name: a.name, currency: a.currency, created_at: a.createdAt, balance: a.balance, paid, payments: upi.length + stripe.length, spent, steps: debits.length, reviews, last_at: lastAt })
+      // Most steps are free now and leave no entry: count them from the
+      // account's lifetime counters, and take the latest use as activity.
+      const counts = a.counts ?? {}
+      const freeSteps = (['parse', 'jobs', 'contact', 'draft', 'preview'] as const).reduce((n, k) => n + (counts[k] ?? 0), 0)
+      const uses = Object.values(a.uses ?? {}).flat()
+      const lastAt = [a.entries[0]?.at, ...uses].filter((x): x is string => !!x).sort().at(-1) ?? null
+      people.push({ sub, email: a.email, name: a.name, currency: a.currency, created_at: a.createdAt, balance: a.balance, paid, payments: upi.length + stripe.length, spent, steps: debits.length + freeSteps, reviews, last_at: lastAt })
       const t = totals[a.currency]
       t.accounts++
       t.payments += upi.length + stripe.length

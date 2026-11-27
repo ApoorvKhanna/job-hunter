@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     console.log('[block] sign-in refused', JSON.stringify({ sub: who.sub }))
     return bounce('blocked')
   }
-  // One welcome credit per network. Only a brand-new account is judged; an
+  // One welcome email per network. Only a brand-new account is judged; an
   // existing account signs in from anywhere.
   let noWelcome = false
   let network: string | undefined

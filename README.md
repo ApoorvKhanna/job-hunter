@@ -1,11 +1,13 @@
 # Job Hunter
 
-Two ways in, one balance:
+Two ways in:
 
 - **Job hunt.** Upload a resume. Get matching postings, the people hiring at
-  each company, their email, and a short note to send. Pay per step, charged
-  only on success.
-- **Resume and profile review.** One price. A heatmap of where a recruiter's
+  each company, their email, and a short note to send. Everything is free
+  within a daily allowance except the email, which costs one email credit,
+  used only when an address comes back. The first email is free.
+- **Resume and profile review.** A free 6-second scan (the heatmap and a
+  score), then one price for the full review. A heatmap of where a recruiter's
   eye lands on the resume in the first seconds, a check of the user's
   LinkedIn, X, GitHub and website against the roles they want, fit and gaps
   per role, rewritten lines and a 7-day plan. Saved to the account.
@@ -24,21 +26,19 @@ Live: https://thejobhunter.in (the old job-hunter-in.vercel.app address redirect
 - Sign in with Google (plain OAuth 2.0, no auth library). Identity lives in
   one AES-GCM encrypted cookie.
 - Jobs come from a two-source cascade. JSearch (OpenWeb Ninja on RapidAPI,
-  Google Jobs underneath) runs first at roughly 1/100th the per-job cost. If
-  it returns fewer than 10 fresh matches, TheirStack tops the page up inside
-  the same date window, so the deeper India coverage stays available and the
-  flat per-call fee is only paid on a miss. Without `RAPIDAPI_KEY` the app
-  runs on TheirStack alone. Contacts and drafting run through a metered
+  Google Jobs underneath) carries every free search, at roughly 1/100th the
+  per-job cost. When it returns fewer than 10 fresh matches the page offers a
+  deep search: TheirStack tops the page up inside the same date window, and
+  one of the account's deep searches is used only if it added postings. Free
+  searches never call TheirStack. Contacts and drafting run through a metered
   backend behind one operator key. The user never sees either backend.
 - Every search logs per-source counts (`[jobs] {"jsearch":7,"theirstack":4,…}`),
   which is the raw data for comparing source depth on identical queries.
 - Note on coverage: JSearch does not reliably index naukri.com. If naukri
   turns out to carry a real share of Indian matches, the fix is a
   naukri-specific source or keeping TheirStack for India queries. An Indeed
-  scraper does not close that gap; it is a different pool of employers. Prices in `lib/prices.ts`
-  are what the user pays; the backend's cost per step is roughly the same
-  number in US cents.
-- Top-ups are Stripe Checkout over plain REST (no SDK), in the account's
+  scraper does not close that gap; it is a different pool of employers.
+- Email packs (and review payments) are Stripe Checkout over plain REST (no SDK), in the account's
   currency. Payment methods are not listed in code: Checkout shows what the
   Stripe Dashboard enables, so UPI for rupee accounts is a Dashboard toggle
   (Settings, Payment methods, UPI). The webhook and the return page both credit
@@ -56,22 +56,35 @@ Live: https://thejobhunter.in (the old job-hunter-in.vercel.app address redirect
 
 ## Prices
 
-In `lib/prices.ts`. Reading a resume is free (10 a day). Dollar prices follow
-one fixed ratio, ₹499 = $9, rounded to the cent (deliberately not the market
-rate). The review is priced on its own.
+In `lib/prices.ts`. One price in the job hunt: the email. The rest is free
+within a daily allowance per account, which bounds what a non-paying account
+can cost (about 30¢ a day if it uses everything, about 5¢ for a typical
+visitor). The one expensive call, the deep job source (TheirStack, 40¢), is
+never free: it runs only on a deep search, which comes in packs.
 
-| | India | Everyone else |
+| Free each day | Never paid | Has paid |
 | --- | --- | --- |
-| Welcome credit | ₹45 | $0.81 |
-| Read the resume | Free | Free |
-| Ten matching postings | ₹49 | $0.88 |
-| People at a company | ₹6 | $0.11 |
-| Reveal one email | ₹20 | $0.36 |
-| Draft the note | ₹2 | $0.04 |
-| Resume and profile review | ₹479 | $9 |
-| Top-ups | ₹149, ₹499, ₹999 | $5, $10, $20 |
+| Resume reads | 10 | 20 |
+| Job searches (cheap source) | 3 | 15 |
+| Company lookups (the people hiring) | 5 | 30 |
+| Drafts | 5 | 60 |
+| Review scans | 1 | 3 |
 
-A review costs roughly 10 to 15¢ in backend calls: the model (scan plus
+| Packs (never expire) | India | Everyone else |
+| --- | --- | --- |
+| 8 emails + 2 deep searches | ₹149 | $5 |
+| 30 emails + 8 deep searches | ₹499 | $10 |
+| 70 emails + 20 deep searches | ₹999 | $20 |
+
+New accounts get 1 free email (one account per network). The full review is
+₹479 / $9, paid from the money balance or straight through Stripe. Accounts
+holding money from before packs (old top-ups, manual UPI, the old welcome
+credit) spend it on emails at ₹20 / $0.36 each, and on reviews.
+
+PostHog events for the funnel: `paywall_shown` (with `reason`),
+`checkout_opened`, `search_done`, `email_found`, `review_preview`.
+
+A review costs roughly 10 to 15¢ in backend calls (the free scan about 4¢ of it, and a paid run reuses it): the model (scan plus
 evaluation) and up to 1¢ to 4¢ per profile read.
 
 ## Setup
@@ -127,12 +140,12 @@ app/jobs/                  the five-step job flow with the status bar
 app/review/                the review flow, the report, the heatmap
 app/saved/                 saved reviews, jobs, contacts and drafts
 app/admin/                 money per currency, approve manual UPI
-app/credits.tsx            the add-credits sheet (Stripe, or manual UPI)
+app/credits.tsx            the email packs sheet (Stripe, or manual UPI)
 app/api/auth/google/*      sign in / callback / logout
 app/api/extract            PDF / DOCX / TXT → text (free)
 app/api/{parse,jobs,contact,email,draft}   one paid step each
-app/api/review/*           start (draft), run (charge + run), status, page image
-app/api/checkout           opens Stripe Checkout
+app/api/review/*           start (draft), preview (free scan), run (charge + run), status, page image
+app/api/checkout           opens Stripe Checkout (a pack, or a review)
 app/api/stripe/webhook     credits a completed payment
 app/api/recharge           manual UPI: user reports a payment
 app/api/admin/recharges    operator lists / approves

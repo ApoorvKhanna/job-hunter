@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { ensureAccount } from '@/lib/ledger'
+import { ensureAccount, walletOf } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
 import { payConfig, settleReturn } from '@/lib/stripe'
@@ -17,7 +17,7 @@ export default async function SavedPage({ searchParams }: { searchParams: Promis
   return (
     <SavedView
       items={items}
-      balance={account.balance}
+      wallet={walletOf(account)}
       currency={account.currency}
       email={session.email}
       pay={payConfig()}

@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       // Both rungs broke (not a miss): say so, so the user retries instead of
       // giving up on a person we might well have.
       if (!first.ok && second && !second.ok) return second
-      return { ok: false, code: 'no_email', message: 'No email on file for this person. Nothing was charged.' }
+      return { ok: false, code: 'no_email', message: 'No email on file for this person. Your email credit was not used.' }
     },
     async (data, sub) =>
       saveItems(sub, [

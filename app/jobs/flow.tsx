@@ -2,16 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import CopyButton from '../copy-button'
-import Credits, { type PayConfig } from '../credits'
+import Credits, { type PayConfig, type PayReason } from '../credits'
 import Header from '../header'
 import Icon from '../icons'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
 import { plural, postedOn } from '@/lib/format'
-import { type Currency, PRICES, type Step, priceLabel } from '@/lib/prices'
+import { type Currency, LEGACY_EMAIL_PRICE, type Step, type Wallet, money } from '@/lib/prices'
+import { track } from '@/lib/track'
 import type { Job, Person, Profile } from '@/lib/types'
 import { VARIANT_LABELS, type Variant } from '@/lib/variants'
 
-type Api<T> = { ok: true; data: T; balance: number; charged?: number } | { ok: false; code: string; message: string; balance?: number; need?: number }
+type Api<T> =
+  | { ok: true; data: T; wallet?: Wallet; balance: number; left?: number }
+  | { ok: false; code: string; message: string; wallet?: Wallet; balance?: number; reason?: 'email' | 'deep' | 'limit' }
+
+/** Below this many postings the free search counts as thin. */
+const THIN = 10
 
 const STEPS = ['Resume', 'Profile', 'Jobs', 'Contacts', 'Email'] as const
 type StepIndex = 0 | 1 | 2 | 3 | 4
@@ -25,7 +31,7 @@ async function post<T>(path: string, body: unknown): Promise<Api<T>> {
     }
     return (await res.json()) as Api<T>
   } catch {
-    return { ok: false, code: 'network', message: 'That step did not go through. Nothing was charged. Try again.' }
+    return { ok: false, code: 'network', message: 'That step did not go through. Nothing was used. Try again.' }
   }
 }
 
@@ -38,29 +44,36 @@ export interface SavedSummary {
 
 // Where the flow was, kept for the trip to the payment page and back.
 const SNAPSHOT = 'jh_flow'
-interface Snapshot { at: number; step: StepIndex; profile: Profile | null; days: number; jobs: Job[] | null; jobsPage: number; moreJobs: boolean; job: Job | null; people: Person[] | null; emails: Record<string, { work: string[]; personal: string[] }>; person: Person | null; note: string | null }
+interface Snapshot { at: number; step: StepIndex; profile: Profile | null; days: number; jobs: Job[] | null; jobsPage: number; moreJobs: boolean; deepUsed?: boolean; job: Job | null; people: Person[] | null; emails: Record<string, { work: string[]; personal: string[] }>; person: Person | null; note: string | null }
 
 export default function Flow({
   email,
-  balance: startBalance,
+  wallet: startWallet,
   currency,
   pay,
   saved,
   notice,
 }: {
   email: string
-  balance: number
+  wallet: Wallet
   currency: Currency
   pay: PayConfig
   saved: SavedSummary
   notice: string | null
 }) {
   const [step, setStep] = useState<StepIndex>(0)
-  const [balance, setBalance] = useState(startBalance)
+  const [wallet, setWallet] = useState(startWallet)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [recharge, setRecharge] = useState<{ need: number } | null>(null)
-  const price = (s: Step) => priceLabel(PRICES[currency][s], currency)
+  /** Today's free limit is used up; a pack would raise it. */
+  const [limitHit, setLimitHit] = useState(false)
+  const [recharge, setRecharge] = useState<{ reason: PayReason } | null>(null)
+  const [searchesLeft, setSearchesLeft] = useState<number | null>(null)
+  const [deepUsed, setDeepUsed] = useState(false)
+  const legacy = LEGACY_EMAIL_PRICE[currency]
+  const canPayEmail = wallet.emails > 0 || wallet.balance >= legacy
+  // One price: the email. Everything else is free within today's allowance.
+  const price = (s: Step) => (s !== 'email' ? 'Free' : wallet.emails > 0 || wallet.balance < legacy ? '1 email credit' : money(legacy, currency))
 
   const [resume, setResume] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -86,6 +99,7 @@ export default function Flow({
         setJobs(snap.jobs)
         setJobsPage(snap.jobsPage)
         setMoreJobs(snap.moreJobs)
+        setDeepUsed(!!snap.deepUsed)
         setJob(snap.job)
         setPeople(snap.people)
         setEmails(snap.emails)
@@ -97,10 +111,10 @@ export default function Flow({
   }, [])
   useEffect(() => {
     try {
-      const snap: Snapshot = { at: Date.now(), step, profile, days, jobs, jobsPage, moreJobs, job, people, emails, person, note }
+      const snap: Snapshot = { at: Date.now(), step, profile, days, jobs, jobsPage, moreJobs, deepUsed, job, people, emails, person, note }
       sessionStorage.setItem(SNAPSHOT, JSON.stringify(snap))
     } catch {}
-  }, [step, profile, days, jobs, jobsPage, moreJobs, job, people, emails, person, note])
+  }, [step, profile, days, jobs, jobsPage, moreJobs, deepUsed, job, people, emails, person, note])
   useEffect(() => {
     try {
       localStorage.setItem('jh_resume', resume)
@@ -111,13 +125,15 @@ export default function Flow({
   }, [step])
 
   const settle = useCallback(<T,>(r: Api<T>): T | null => {
-    if (r.balance != null) setBalance(r.balance)
+    if (r.wallet) setWallet(r.wallet)
     if (!r.ok) {
-      if (r.code === 'recharge') setRecharge({ need: r.need ?? 0 })
+      setLimitHit(r.code === 'daily_limit' && r.reason === 'limit')
+      if (r.code === 'recharge') setRecharge({ reason: r.reason ?? 'email' })
       else setError(r.message)
       return null
     }
     setError(null)
+    setLimitHit(false)
     return r.data
   }, [])
 
@@ -138,16 +154,36 @@ export default function Flow({
     }
   }
   // Step 1 → 2 (page 0) or append the next page
-  async function findJobs(page = 0) {
+  // A deep search re-runs the same page with the deeper source on top.
+  async function findJobs(page = 0, deep = false) {
     if (!profile) return
-    setBusy(page === 0 ? 'jobs' : 'more')
-    const data = settle(await post<Job[]>('/api/jobs', { titles: profile.titles.filter((t) => t.trim()), country_code: profile.country_code, remote: profile.remote, seniority: profile.seniority, days, page }))
+    if (deep && wallet.deep < 1) {
+      setRecharge({ reason: 'deep' })
+      return
+    }
+    setBusy(deep ? 'deep' : page === 0 ? 'jobs' : 'more')
+    const r = await post<Job[]>('/api/jobs', { titles: profile.titles.filter((t) => t.trim()), country_code: profile.country_code, remote: profile.remote, seniority: profile.seniority, days, page, deep })
+    const data = settle(r)
     setBusy(null)
     if (data) {
+      if (r.ok && r.left != null) setSearchesLeft(r.left)
+      track('search_done', { jobs: data.length, deep, page, left: r.ok ? r.left : undefined })
       setJobs((prev) => (page === 0 || !prev ? data : [...prev, ...data.filter((j) => !prev.some((p) => p.id === j.id))]))
       setJobsPage(page)
-      setMoreJobs(data.length >= 10)
+      setMoreJobs(data.length >= THIN)
+      if (page === 0) setDeepUsed(deep)
       setStep(2)
+    } else if (!r.ok && page === 0 && !deep && (r.code === 'no_jobs' || r.code === 'upstream')) {
+      // Nothing on the free search (or it is down): show the empty page,
+      // which is where the deep-search offer lives.
+      if (r.code === 'no_jobs') setError(null)
+      setJobs([])
+      setJobsPage(0)
+      setMoreJobs(false)
+      setDeepUsed(false)
+      setStep(2)
+    } else if (!r.ok && deep && r.code === 'no_jobs') {
+      setDeepUsed(true)
     }
   }
   // Step 2 → 3
@@ -165,10 +201,18 @@ export default function Flow({
     }
   }
   async function reveal(p: Person) {
+    if (!canPayEmail) {
+      setRecharge({ reason: 'email' })
+      return
+    }
     setBusy(`email:${p.linkedin_url}`)
+    const before = wallet
     const data = settle(await post<{ work: string[]; personal: string[] }>('/api/email', { linkedin_url: p.linkedin_url, name: p.name, title: p.title, company: job?.company }))
     setBusy(null)
-    if (data) setEmails((m) => ({ ...m, [p.linkedin_url]: data }))
+    if (data) {
+      setEmails((m) => ({ ...m, [p.linkedin_url]: data }))
+      track('email_found', { paid_with: before.emails > 0 ? 'credit' : 'money' })
+    }
   }
   // Step 3 → 4
   const toOf = (p: Person | null) => {
@@ -201,6 +245,7 @@ export default function Flow({
     if (busy === 'parse') return 'Analysing your resume…'
     if (busy === 'jobs') return 'Finding jobs that match your search…'
     if (busy === 'more') return 'Finding more jobs…'
+    if (busy === 'deep') return 'Searching the deeper job database…'
     if (busy === 'people') return `Finding contacts at ${job?.company ?? 'the company'}…`
     if (busy.startsWith('email:')) {
       const p = people?.find((x) => `email:${x.linkedin_url}` === busy)
@@ -211,7 +256,7 @@ export default function Flow({
 
   return (
     <main className="wrap">
-      <Header active="jobs" email={email} balance={balance} currency={currency} onRecharge={() => setRecharge({ need: 0 })} />
+      <Header active="jobs" email={email} wallet={wallet} currency={currency} onRecharge={() => setRecharge({ reason: null })} />
 
       <StatusBar step={step} onJump={(i) => i < step && setStep(i)} />
       {loading ? <p className="loading" role="status"><span className="spin" /> {loading}</p> : null}
@@ -219,8 +264,13 @@ export default function Flow({
       {busy === 'jobs' || busy === 'people' ? <Skeletons rows={busy === 'jobs' ? 4 : 3} /> : null}
 
       {notice ? <div className="notice ok">{notice}</div> : null}
-      {error ? <div className="notice err">{error}</div> : null}
-      {recharge ? <Credits currency={currency} need={recharge.need} balance={balance} pay={pay} returnTo="jobs" onClose={() => setRecharge(null)} onCredited={setBalance} /> : null}
+      {error ? (
+        <div className="notice err">
+          {error}
+          {limitHit ? <> <button className="btn ghost sm" onClick={() => setRecharge({ reason: 'limit' })}>See email packs</button></> : null}
+        </div>
+      ) : null}
+      {recharge ? <Credits currency={currency} wallet={wallet} reason={recharge.reason} pay={pay} returnTo="jobs" onClose={() => setRecharge(null)} onCredited={(balance) => setWallet((w) => ({ ...w, balance }))} /> : null}
 
       {step === 0 && saved.jobs + saved.contacts + saved.emails > 0 ? (
         <a className="recap" href="/saved">
@@ -291,9 +341,24 @@ export default function Flow({
       {step === 2 && jobs ? (
         <section>
           <h2>{jobs.length ? `${plural(jobs.length, 'job')} found` : 'No jobs found'}</h2>
-          {jobs.length ? <p className="small muted">Open a job title to read the posting, or find contacts at the company.</p> : null}
+          {jobs.length ? (
+            <p className="small muted">
+              Open a job title to read the posting, or find the people hiring at the company.
+              {searchesLeft != null ? <span className="allowance"> {searchesLeft} free {searchesLeft === 1 ? 'search' : 'searches'} left today.</span> : null}
+            </p>
+          ) : null}
+          {jobs.length < THIN && !deepUsed ? (
+            <div className="thin">
+              <span>
+                {jobs.length ? `Only ${jobs.length} fresh ${jobs.length === 1 ? 'posting' : 'postings'} on the free search.` : 'Nothing on the free search.'} A deep search also looks through a second, larger job database.
+              </span>
+              <button className="btn sm" onClick={() => findJobs(0, true)} disabled={busy !== null}>
+                {busy === 'deep' ? <span className="spin" /> : null} Deep search <span className="price">· {wallet.deep > 0 ? `uses 1 of ${wallet.deep}` : 'comes with any pack'}</span>
+              </button>
+            </div>
+          ) : null}
           {jobs.length === 0 ? (
-            <p className="muted">No jobs matched those titles in that date range. <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button></p>
+            <p className="muted">No jobs matched those titles in that date range on the free search. Try simpler titles, a longer date range, or a deep search. <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button></p>
           ) : null}
           {jobs.map((j) => (
             <div className="card" key={j.id}>
@@ -323,7 +388,14 @@ export default function Flow({
       {step === 3 && job && people ? (
         <section>
           <h2>Contacts at {job.company}</h2>
-          <p className="small muted">For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Choose a contact to look up their email or draft a message.</p>
+          <p className="small muted">
+            For <a href={job.url} target="_blank" rel="noreferrer">{job.title}</a>. Choose a contact to look up their email or draft a message.{' '}
+            {wallet.emails > 0
+              ? `You have ${wallet.emails} email ${wallet.emails === 1 ? 'credit' : 'credits'}.`
+              : wallet.balance >= legacy
+                ? `Emails come out of your ${money(wallet.balance, currency)} balance.`
+                : <>You are out of emails. <button className="btn ghost sm" onClick={() => setRecharge({ reason: 'email' })}>Get emails</button></>}
+          </p>
           {people.length === 0 ? <p className="muted">No managers or recruiters found at this company. You can still draft an email without a contact.</p> : null}
           <div className="card">
             {people.map((p) => {
@@ -339,11 +411,11 @@ export default function Flow({
                   <div className="row" style={{ flexShrink: 0 }}>
                     {p.linkedin_url ? <a className="btn ghost sm" href={p.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a> : null}
                     {!e ? (
-                      <button className="btn ghost sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
-                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Find email <span className="price">· {price('email')}</span>
+                      <button className="btn sm" onClick={() => reveal(p)} disabled={busy !== null || !canReveal} title={canReveal ? '' : 'No email on file'}>
+                        {busy === `email:${p.linkedin_url}` ? <span className="spin" /> : null} Get email <span className="price">· {price('email')}</span>
                       </button>
                     ) : null}
-                    <button className="btn sm" onClick={() => draft(p)} disabled={busy !== null}>
+                    <button className="btn ghost sm" onClick={() => draft(p)} disabled={busy !== null}>
                       {busy === `draft:${p.linkedin_url}` ? <span className="spin" /> : null} Draft email <span className="price">· {price('draft')}</span>
                     </button>
                   </div>
@@ -384,7 +456,7 @@ export default function Flow({
         </section>
       ) : null}
 
-      <p className="footer">You’re charged only when a step succeeds.</p>
+      <p className="footer">Searching, finding people and drafting are free. An email credit is used only when an email is found.</p>
     </main>
   )
 }

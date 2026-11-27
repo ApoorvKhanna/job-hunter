@@ -35,7 +35,7 @@ export const CUSTOMER_BUDGET_CENTS = Math.round(Number(process.env.CUSTOMER_BUDG
 // First funding, in cents. Mirrors the welcome credit at the app's ₹1 ≈ 1¢ mapping.
 export const CUSTOMER_WELCOME_CENTS = Math.round(Number(process.env.CUSTOMER_WELCOME_CENTS ?? 49))
 
-// Money. Prices, the welcome credit and top-up amounts live in lib/prices.ts.
+// Money. Prices, the welcome email, allowances and packs live in lib/prices.ts.
 // Balances are integer minor units (paise or cents) of the account's currency.
 // Where we cannot tell the visitor's country (local dev), new accounts use this.
 export const DEFAULT_CURRENCY: 'inr' | 'usd' = process.env.DEFAULT_CURRENCY === 'usd' ? 'usd' : 'inr'

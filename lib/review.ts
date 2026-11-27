@@ -1,18 +1,21 @@
-// The resume + profile review. One paid run does three things in parallel:
+// The resume + profile review. A free preview runs the scan alone (one model
+// call, ~4¢, within a daily allowance) so people see the heatmap and the
+// 6-second score before paying. One paid run does three things in parallel:
 //   1. the hotspot scan: where a recruiter's eye lands in the first seconds,
 //      from the page images (falling back to the text layout, then to layout
 //      rules, so a scan always comes back);
 //   2. reads the public profiles the user gave (LinkedIn, X, GitHub, site);
 //   3. an evaluation of resume + profiles against the target roles.
 // The price is debited before the run and refunded if the evaluation fails.
+// A paid run reuses the preview's scan when there is one.
 import { REVIEW_MODEL } from './env'
 import { type Block, describeBlocks, priorScan } from './layout'
-import { credit, debit, getAccount, InsufficientBalance } from './ledger'
+import { credit, debit, getAccount, InsufficientBalance, releaseFree, takeFree } from './ledger'
 import { REVIEW_PRICE } from './prices'
 import { type SourceKey, readProfiles } from './profiles'
 import { chat, type ChatPart } from './provider'
 import { type Evaluation, type Review, type ScanResult, getReview, readPageImage, updateReview } from './review-store'
-import { extractJson } from './route'
+import { extractJson, limitMessage } from './route'
 import { saveItems } from './saved'
 
 const SCAN_SYSTEM = `You simulate where a recruiter's eyes go in the first 6 to 8 seconds on a resume, using what eye-tracking studies of recruiters show:
@@ -189,6 +192,49 @@ async function evaluate(review: Review, profiles: Partial<Record<SourceKey, stri
   return assess ? cleanEvaluation({ ...assess, ...(rewrite ?? {}) }, review.input.roles) : null
 }
 
+/** The model's copies of the pages, page one first, inside the router's
+ *  512 KB request cap (the text of the prompt rides along too). */
+async function visionImages(sub: string, review: Review): Promise<string[]> {
+  const images: string[] = []
+  let budget = 400_000
+  for (const p of review.input.pages.filter((x) => x.vision)) {
+    const buf = await readPageImage(sub, review.id, p.n, 'v').catch(() => null)
+    const url = buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null
+    if (!url || url.length > budget) break
+    images.push(url)
+    budget -= url.length
+  }
+  return images
+}
+
+/** The free preview: the scan alone, saved on the draft. Counts against the
+ *  daily `preview` allowance only when a model scan comes back. */
+export async function previewReview(sub: string, id: string): Promise<{ ok: true; review: Review } | { ok: false; code: string; message: string; reason?: 'limit' }> {
+  const review = await getReview(sub, id)
+  if (!review) return { ok: false, code: 'invalid', message: 'That review was not found.' }
+  if (review.preview) return { ok: true, review }
+  if (review.status !== 'draft' && review.status !== 'failed') return { ok: false, code: 'invalid', message: 'That review has already started. Open it from your saved results.' }
+  const take = await takeFree(sub, 'preview')
+  if (!take.ok) return { ok: false, code: 'daily_limit', message: limitMessage('preview', take), ...(take.tier === 'free' ? { reason: 'limit' as const } : {}) }
+  try {
+    const result = await scan(review, await visionImages(sub, review))
+    if (result.method === 'rules') {
+      // Layout rules alone, no model: not worth showing as the preview.
+      await releaseFree(sub, 'preview', take.token).catch(() => {})
+      return { ok: false, code: 'failed', message: 'The scan did not come through. Try again in a minute.' }
+    }
+    const saved = await updateReview(sub, id, (r) => {
+      r.preview = { scan: result, at: new Date().toISOString() }
+    })
+    console.log('[review] preview', JSON.stringify({ sub, id, method: result.method, score: result.score }))
+    return { ok: true, review: saved }
+  } catch (err) {
+    console.error('[review] preview threw', id, err)
+    await releaseFree(sub, 'preview', take.token).catch(() => {})
+    return { ok: false, code: 'failed', message: 'The scan did not come through. Try again in a minute.' }
+  }
+}
+
 /** Debit the price and mark the review running, once. */
 export async function startReview(sub: string, id: string): Promise<{ ok: true; review: Review; started: boolean } | { ok: false; code: string; message: string; balance?: number; need?: number }> {
   const [review, account] = await Promise.all([getReview(sub, id), getAccount(sub)])
@@ -254,19 +300,8 @@ export async function runReview(sub: string, id: string): Promise<void> {
   const account = await getAccount(sub)
   if (!review || !account || review.status !== 'running') return
   try {
-    // The model's copies of the pages, page one first, inside the router's
-    // 512 KB request cap (the text of the prompt rides along too).
-    const images: string[] = []
-    let budget = 400_000
-    for (const p of review.input.pages.filter((x) => x.vision)) {
-      const buf = await readPageImage(sub, id, p.n, 'v').catch(() => null)
-      const url = buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null
-      if (!url || url.length > budget) break
-      images.push(url)
-      budget -= url.length
-    }
-
-    const scanning = scan(review, images)
+    // The preview's scan when there is one; otherwise scan now.
+    const scanning = review.preview ? Promise.resolve(review.preview.scan) : visionImages(sub, review).then((images) => scan(review, images))
     const profiles = await readProfiles(account, review.input.links)
     await updateReview(sub, id, (r) => {
       r.stage = 'analysis'

@@ -5,7 +5,7 @@ import CopyButton from '../copy-button'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
 import { postedOn } from '@/lib/format'
-import type { Currency } from '@/lib/prices'
+import type { Currency, Wallet } from '@/lib/prices'
 import type { SavedEmail, SavedItem, SavedJob, SavedNote, SavedReview } from '@/lib/saved'
 
 type Tab = 'note' | 'email' | 'job' | 'review'
@@ -27,7 +27,7 @@ function when(at: string): string {
 
 export default function SavedView({
   items,
-  balance: startBalance,
+  wallet: startWallet,
   currency,
   email,
   pay,
@@ -35,7 +35,7 @@ export default function SavedView({
   initialTab,
 }: {
   items: SavedItem[]
-  balance: number
+  wallet: Wallet
   currency: Currency
   email: string
   pay: PayConfig
@@ -43,7 +43,7 @@ export default function SavedView({
   initialTab: Tab | null
 }) {
   const [tab, setTab] = useState<Tab>(initialTab ?? (items.some((i) => i.kind === 'note') || !items.some((i) => i.kind === 'review') ? 'note' : 'review'))
-  const [balance, setBalance] = useState(startBalance)
+  const [wallet, setWallet] = useState(startWallet)
   const [recharge, setRecharge] = useState(false)
   const [q, setQ] = useState('')
 
@@ -60,9 +60,9 @@ export default function SavedView({
 
   return (
     <main className="wrap">
-      <Header active="saved" email={email} balance={balance} currency={currency} onRecharge={() => setRecharge(true)} />
+      <Header active="saved" email={email} wallet={wallet} currency={currency} onRecharge={() => setRecharge(true)} />
       {notice ? <div className="notice ok">{notice}</div> : null}
-      {recharge ? <Credits currency={currency} need={0} balance={balance} pay={pay} returnTo="saved" onClose={() => setRecharge(false)} onCredited={setBalance} /> : null}
+      {recharge ? <Credits currency={currency} wallet={wallet} pay={pay} returnTo="saved" onClose={() => setRecharge(false)} onCredited={(balance) => setWallet((w) => ({ ...w, balance }))} /> : null}
 
       <h2 style={{ marginTop: 0 }}>Your saved results</h2>
       <p className="small muted">Your reviews, saved jobs, contacts and email drafts are free to revisit.</p>

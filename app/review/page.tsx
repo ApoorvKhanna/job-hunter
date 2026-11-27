@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { ensureAccount } from '@/lib/ledger'
+import { ensureAccount, walletOf } from '@/lib/ledger'
 import { REVIEW_PRICE } from '@/lib/prices'
 import { validId } from '@/lib/review-store'
 import { listSaved } from '@/lib/saved'
@@ -21,7 +21,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   return (
     <ReviewFlow
       email={session.email}
-      balance={account.balance}
+      wallet={walletOf(account)}
       currency={account.currency}
       price={REVIEW_PRICE[account.currency]}
       pay={payConfig()}

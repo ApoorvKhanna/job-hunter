@@ -1,6 +1,6 @@
 import { bucketFor, jsearchEnabled, searchJobs } from '@/lib/jsearch'
 import { runFor } from '@/lib/provider'
-import type { Account } from '@/lib/ledger'
+import { type Account, returnDeep, useDeep } from '@/lib/ledger'
 import { paidStep, readJson } from '@/lib/route'
 import { saveItems } from '@/lib/saved'
 import type { Job } from '@/lib/types'
@@ -8,9 +8,10 @@ import type { Job } from '@/lib/types'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
-// ── legacy source (TheirStack, via the provider) ────────────────────────────
-// Kept as the top-up and as the fallback without a JSEARCH_API_KEY. It bills a flat
-// 40c per call regardless of rows, which is why it is no longer the default.
+// ── the deep source (TheirStack, via the provider) ──────────────────────────
+// Bills a flat 40c per call regardless of rows. Free searches never touch it:
+// it runs only on a deep search, which spends one of the account's deep
+// searches (they come with email packs), and only when it added postings.
 interface RawJob {
   id: number
   job_title: string
@@ -103,24 +104,43 @@ function mergeJobs(...lists: Job[][]): Job[] {
   return out
 }
 
-/** Below this many fresh matches we top up from the pricier, deeper source. */
+/** Below this many fresh matches a deep search tops up from the deeper source. */
 const THIN = 10
 
 export async function POST(req: Request) {
-  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; days?: number; page?: number }>(req)
+  const body = await readJson<{ titles?: string[]; country_code?: string; remote?: boolean | null; days?: number; page?: number; deep?: boolean }>(req)
   const titles = (body.titles ?? []).map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
   if (titles.length === 0) return Response.json({ ok: false, code: 'invalid', message: 'Add at least one job title.' })
   const page = Math.min(20, Math.max(0, Math.floor(Number(body.page ?? 0))))
   const days = Math.min(60, Math.max(1, Number(body.days ?? 14)))
   const country = body.country_code && /^[A-Z]{2}$/i.test(body.country_code) ? body.country_code.toUpperCase() : null
   const remote = body.remote === true
+  const deep = body.deep === true
 
   return paidStep<Job[]>(
     'jobs',
     async (account) => {
-      const stats: Record<string, number> = {}
+      const noDeep = { ok: false as const, code: 'recharge', reason: 'deep' as const, message: 'Deep search comes with any email pack.' }
+      if (deep && (account.deep ?? 0) < 1) return noDeep
+      // A deep search is taken before the 40¢ call, so parallel deep searches
+      // cannot all reach it, and given back if it found nothing new.
+      const reserveDeep = async (): Promise<boolean> => {
+        try {
+          await useDeep(account.sub)
+          return true
+        } catch (err) {
+          if ((err as Error).message === 'no_deep') return false
+          throw err
+        }
+      }
+      const giveDeepBack = () => returnDeep(account.sub).catch((e) => console.error('[jobs] deep search not returned', account.sub, e))
+      const stats: Record<string, number> = { deep: deep ? 1 : 0 }
       let jobs: Job[] = []
 
+      if (!jsearchEnabled() && !deep) {
+        console.error('[jobs] cheap source not configured; free searches are off')
+        return { ok: false, code: 'unavailable', message: 'Search is down for a moment. Try again in a few minutes. Nothing was used.' }
+      }
       if (jsearchEnabled()) {
         // 1. The cheap source (through the provider, 1¢), at exactly the window the user asked for.
         const first = await searchJobs({ titles, countryCode: country, remoteOnly: remote, days, page }, account)
@@ -128,12 +148,13 @@ export async function POST(req: Request) {
           stats.jsearch = first.jobs.length
           jobs = first.jobs
         } else {
-          // The cheap source being down (quota, outage) must not take the
-          // step down with it: treat it as thin and let the deeper source
-          // carry the search. Costs 40c a call while it lasts, so the log
-          // line is the signal to top the cheap vendor up.
-          console.log('[jobs] cheap source failed, deeper source carries', JSON.stringify({ code: first.code }))
+          // The cheap source being down (quota, outage): a deep search can
+          // still carry it; a free search cannot, since the deeper source
+          // costs 40c a call. The log line is the signal to top the cheap
+          // vendor up.
+          console.log('[jobs] cheap source failed', JSON.stringify({ code: first.code, deep }))
           stats.jsearch = -1
+          if (!deep) return { ok: false, code: 'upstream', message: 'Search is busy right now. Try again in a minute. Nothing was used.' }
         }
 
         // 2. Thin? Retry the cheap source on the wider bucket first. `week`
@@ -147,20 +168,24 @@ export async function POST(req: Request) {
           }
         }
 
-        // 3. Still thin? Top up from the deeper source, still inside the
-        //    user's window so everything we show stays fresh. This is the
-        //    only path that costs real money, and only on a miss.
-        if (jobs.length < THIN) {
+        // 3. A deep search, still thin? Top up from the deeper source, still
+        //    inside the user's window so everything we show stays fresh. This
+        //    is the only path that costs real money.
+        if (deep && jobs.length < THIN) {
+          if (!(await reserveDeep())) return noDeep
+          const before = jobs.length
           const topUp = await legacySearch(account, titles, days, country, remote, page)
           if (Array.isArray(topUp)) {
             stats.theirstack = topUp.length
             jobs = mergeJobs(jobs, topUp).slice(0, THIN)
           } else {
-            // The fallback failing is not the user's problem when the cheap
-            // source already found something.
             stats.theirstack = -1
-            if (jobs.length === 0) return { ok: false, code: topUp.error, message: topUp.message }
           }
+          stats.deep_added = jobs.length - before
+          if (jobs.length <= before) await giveDeepBack()
+          // The deeper source failing is not the user's problem when the
+          // cheap source already found something.
+          if (!Array.isArray(topUp) && jobs.length === 0) return { ok: false, code: topUp.error, message: topUp.message }
         }
 
         // 4. Nothing at all? Widen the cheap source before giving up.
@@ -177,7 +202,10 @@ export async function POST(req: Request) {
           }
         }
       } else {
+        // No cheap source configured: only a deep search runs at all.
+        if (!(await reserveDeep())) return noDeep
         const out = await legacySearch(account, titles, days, country, remote, page)
+        if (!Array.isArray(out) || out.length === 0) await giveDeepBack()
         if (!Array.isArray(out)) return { ok: false, code: out.error, message: out.message }
         stats.theirstack_only = out.length
         jobs = out
@@ -193,8 +221,8 @@ export async function POST(req: Request) {
           code: 'no_jobs',
           message:
             page > 0
-              ? 'That is everything we could find for these titles. Nothing was charged.'
-              : 'No postings matched those titles, even after widening the search. Nothing was charged. Try simpler titles, like "Product Manager" instead of a long one.',
+              ? 'That is everything we could find for these titles. This search did not count.'
+              : 'No postings matched those titles, even after widening the search. This search did not count. Try simpler titles, like "Product Manager" instead of a long one.',
         }
       }
       return { ok: true, data: jobs }

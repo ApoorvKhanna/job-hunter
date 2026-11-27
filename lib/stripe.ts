@@ -10,8 +10,8 @@
 // through creditTopUp, which credits a session once.
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { APP_NAME, APP_URL, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, UPI_ID, UPI_NAME } from './env'
-import { creditTopUp, getAccount } from './ledger'
-import { type Currency, money } from './prices'
+import { creditPack, creditTopUp, getAccount } from './ledger'
+import { type Currency, money, packById, packLabel } from './prices'
 
 const API = 'https://api.stripe.com/v1'
 
@@ -66,7 +66,7 @@ export async function createCheckout(
   who: { sub: string; email: string },
   currency: Currency,
   amount: number,
-  opts: { path: string; label: string; purpose: 'credits' | 'review'; reviewId?: string },
+  opts: { path: string; label: string; purpose: 'pack' | 'review'; reviewId?: string; packId?: string },
 ): Promise<string | null> {
   const join = opts.path.includes('?') ? '&' : '?'
   const session = await stripe<CheckoutSession>('POST', '/checkout/sessions', {
@@ -79,6 +79,7 @@ export async function createCheckout(
     'metadata[app]': APP_TAG,
     'metadata[purpose]': opts.purpose,
     ...(opts.reviewId ? { 'metadata[review]': opts.reviewId } : {}),
+    ...(opts.packId ? { 'metadata[pack]': opts.packId } : {}),
     'payment_intent_data[description]': `${APP_NAME}: ${opts.label}`,
     'line_items[0][quantity]': '1',
     'line_items[0][price_data][currency]': currency,
@@ -101,7 +102,7 @@ export function topUpOwner(session: CheckoutSession): string | null {
 /** Credit a paid top-up session to the account that started it. Safe to
  *  repeat. Sessions that are not this app's, unpaid, or in a currency other
  *  than the account's are ignored. */
-export async function settleCheckout(session: CheckoutSession): Promise<{ sub: string; amount: number; currency: Currency; credited: boolean } | null> {
+export async function settleCheckout(session: CheckoutSession): Promise<{ sub: string; amount: number; currency: Currency; credited: boolean; what: string } | null> {
   const sub = topUpOwner(session)
   if (!sub || session.payment_status !== 'paid' || !session.amount_total) return null
   const account = await getAccount(sub)
@@ -114,10 +115,22 @@ export async function settleCheckout(session: CheckoutSession): Promise<{ sub: s
     console.error('[topup] currency mismatch, not credited', JSON.stringify({ sub, session: session.id, paid: session.currency, account: account.currency }))
     return null
   }
+  // A pack: emails + deep searches, at exactly the pack's price.
+  if (session.metadata?.purpose === 'pack') {
+    const pack = packById(session.metadata.pack)
+    if (!pack || pack.price[account.currency] !== session.amount_total) {
+      console.error('[topup] pack does not match what was paid, not credited', JSON.stringify({ sub, session: session.id, pack: session.metadata.pack, paid: session.amount_total }))
+      return null
+    }
+    const { credited } = await creditPack(sub, session.id, pack, session.amount_total)
+    if (credited) console.log('[topup] pack', JSON.stringify({ sub, pack: pack.id, amount: session.amount_total, currency: account.currency, session: session.id }))
+    return { sub, amount: session.amount_total, currency: account.currency, credited, what: packLabel(pack) }
+  }
+  // Money: a review payment, or a top-up opened before packs existed.
   const note = account.currency === 'inr' ? 'Top-up (UPI or card)' : 'Top-up (card)'
   const { credited } = await creditTopUp(sub, session.id, session.amount_total, note)
   if (credited) console.log('[topup]', JSON.stringify({ sub, amount: session.amount_total, currency: account.currency, session: session.id }))
-  return { sub, amount: session.amount_total, currency: account.currency, credited }
+  return { sub, amount: session.amount_total, currency: account.currency, credited, what: money(session.amount_total, account.currency) }
 }
 
 /** Back from Stripe on one of our pages: credit now rather than wait for the
@@ -131,7 +144,7 @@ export async function settleReturn(sub: string, topup: string | undefined): Prom
     console.error('[topup] return credit failed', err)
     return null
   })
-  return settled ? `${money(settled.amount, settled.currency)} added to your balance.` : 'Your payment is still processing. Your balance updates when it clears.'
+  return settled ? `${settled.what} added to your account.` : 'Your payment is still processing. Your account updates when it clears.'
 }
 
 /** Check a webhook's Stripe-Signature header against the endpoint secret. */

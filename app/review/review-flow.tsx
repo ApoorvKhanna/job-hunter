@@ -6,12 +6,13 @@ import Header from '../header'
 import Icon from '../icons'
 import { type Links, linksFromResume, normalizeLinks } from '@/lib/links'
 import type { PdfCapture } from '@/lib/pdf-client'
-import { type Currency, money } from '@/lib/prices'
+import { type Currency, type Wallet, money } from '@/lib/prices'
+import { track } from '@/lib/track'
 
 const STEPS = ['Resume', 'Profiles', 'Roles', 'Review'] as const
 type StepIndex = 0 | 1 | 2 | 3
 
-type Api<T> = { ok: true; data: T; balance?: number } | { ok: false; code: string; message: string; balance?: number; need?: number }
+type Api<T> = { ok: true; data: T; balance?: number } | { ok: false; code: string; message: string; balance?: number; need?: number; reason?: 'limit' }
 
 async function call<T>(path: string, body?: unknown): Promise<Api<T>> {
   try {
@@ -35,7 +36,7 @@ interface Past { id: string; at: string; roles: string[]; overall: number | null
 
 export default function ReviewFlow({
   email,
-  balance: startBalance,
+  wallet: startWallet,
   currency,
   price,
   pay,
@@ -45,7 +46,7 @@ export default function ReviewFlow({
   resumeId,
 }: {
   email: string
-  balance: number
+  wallet: Wallet
   currency: Currency
   price: number
   pay: PayConfig
@@ -55,7 +56,9 @@ export default function ReviewFlow({
   resumeId: string | null
 }) {
   const [step, setStep] = useState<StepIndex>(resumeId ? 3 : 0)
-  const [balance, setBalance] = useState(startBalance)
+  const [wallet, setWallet] = useState(startWallet)
+  const balance = wallet.balance
+  const setBalance = useCallback((b: number) => setWallet((w) => ({ ...w, balance: b })), [])
   const [error, setError] = useState<string | null>(null)
   const [credits, setCredits] = useState<{ need: number } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -207,10 +210,9 @@ export default function ReviewFlow({
     setBusy(null)
   }
 
-  async function start() {
-    if (!capture) return
-    setError(null)
-    setBusy('start')
+  /** Save what the review needs as a draft (free). */
+  async function draftReview(): Promise<string | null> {
+    if (!capture) return null
     const draft = await call<{ id: string }>('/api/review/start', {
       file_name: fileName,
       resume: capture.text,
@@ -220,11 +222,40 @@ export default function ReviewFlow({
       pages: capture.pages,
     })
     if (!draft.ok) {
-      setBusy(null)
       setError(draft.message)
+      return null
+    }
+    return draft.data.id
+  }
+
+  // The free 6-second scan: the heatmap and the score, then the offer.
+  async function freeScan() {
+    setError(null)
+    setBusy('scan')
+    const id = await draftReview()
+    if (!id) {
+      setBusy(null)
       return
     }
-    const id = draft.data.id
+    const r = await call<{ id: string; score: number | null }>('/api/review/preview', { id })
+    if (r.ok) {
+      track('review_preview', { score: r.data.score })
+      window.location.href = `/review/${id}`
+      return
+    }
+    setBusy(null)
+    setError(r.message)
+  }
+
+  async function start() {
+    if (!capture) return
+    setError(null)
+    setBusy('start')
+    const id = await draftReview()
+    if (!id) {
+      setBusy(null)
+      return
+    }
     if (balance >= price) {
       setBusy(null)
       await startRun(id)
@@ -251,7 +282,7 @@ export default function ReviewFlow({
 
   return (
     <main className="wrap">
-      <Header active="review" email={email} balance={balance} currency={currency} onRecharge={() => setCredits({ need: 0 })} />
+      <Header active="review" email={email} wallet={wallet} currency={currency} onRecharge={() => setCredits({ need: 0 })} />
       <ol className="status" aria-label="progress">
         {STEPS.map((label, i) => {
           const state = i < step ? 'done' : i === step ? 'current' : 'todo'
@@ -266,15 +297,15 @@ export default function ReviewFlow({
       {notice ? <div className="notice ok">{notice}</div> : null}
       {error ? <div className="notice err">{error}</div> : null}
       {credits ? (
-        <Credits currency={currency} need={credits.need} balance={balance} pay={pay} returnTo="review" onClose={() => setCredits(null)} onCredited={setBalance} />
+        <Credits currency={currency} wallet={wallet} pay={pay} returnTo="review" onClose={() => setCredits(null)} onCredited={setBalance} />
       ) : null}
 
       {step === 0 ? (
         <section>
           <h2 style={{ marginTop: 0 }}>Resume and profile review</h2>
           <p className="muted">
-            See where a recruiter’s eye lands on your resume in the first six seconds and what it skips. Add your LinkedIn, X, GitHub or
-            website and we check them against the roles you want. You get a score, the gaps, rewritten lines and a plan for the week.
+            See where a recruiter’s eye lands on your resume in the first six seconds, free. The full review adds your LinkedIn, X, GitHub
+            and website checked against the roles you want, the gaps, rewritten lines and a plan for the week.
           </p>
           {past.length > 0 ? (
             <div className="past">
@@ -388,13 +419,29 @@ export default function ReviewFlow({
           <div className="card pay-card">
             <div className="row between">
               <div>
-                <b>Resume and profile review</b>
+                <b>Free: your 6-second scan</b>
+                <div className="small muted">A heatmap of where a recruiter’s eye lands, what they take away, and your scan score. About 30 seconds.</div>
+              </div>
+              <div className="pay-price">Free</div>
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn" onClick={freeScan} disabled={busy !== null || roleList.length === 0}>
+                {busy === 'scan' ? <span className="spin" /> : null}
+                {busy === 'scan' ? 'Scanning like a recruiter would…' : 'See my free scan'}
+              </button>
+            </div>
+          </div>
+
+          <div className="card pay-card">
+            <div className="row between">
+              <div>
+                <b>Or go straight to the full review</b>
                 <div className="small muted">Eye-tracking heatmap, {given ? `${given + 1} sources checked` : 'resume check'}, fit for {roleList.length || 1} {roleList.length === 1 ? 'role' : 'roles'}, rewrites and a 7-day plan. Saved to your account.</div>
               </div>
               <div className="pay-price">{m(price)}</div>
             </div>
             <div className="row" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={start} disabled={busy !== null || roleList.length === 0}>
+              <button className="btn ghost" onClick={start} disabled={busy !== null || roleList.length === 0}>
                 {busy === 'start' ? <span className="spin" /> : null}
                 {short === 0 ? `Start review · ${m(price)}` : balance > 0 ? `Pay ${m(Math.max(short, currency === 'inr' ? 5000 : 100))} and start` : `Pay ${m(price)} and start`}
               </button>

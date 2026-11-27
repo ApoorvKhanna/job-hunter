@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { ensureAccount } from '@/lib/ledger'
+import { ensureAccount, walletOf } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
 import { payConfig, settleReturn } from '@/lib/stripe'
@@ -24,5 +24,5 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       person: n.kind === 'note' ? n.person : null,
     })),
   }
-  return <Flow email={session.email} balance={account.balance} currency={account.currency} pay={payConfig()} saved={saved} notice={notice} />
+  return <Flow email={session.email} wallet={walletOf(account)} currency={account.currency} pay={payConfig()} saved={saved} notice={notice} />
 }

@@ -1,5 +1,5 @@
-// Who to write to at the company. The user is charged only if at least one
-// person comes back.
+// Who to write to at the company. Free within the daily allowance, which is
+// used only if at least one person comes back.
 //   1. routed people-finder (2¢): "managers, founders, recruiters at X" → up to 15 rows
 //   2. nothing → no_people, no charge
 // ContactOut's people search used to be a second rung; its live API access
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     console.log('[contact]', JSON.stringify({ company, title, find_ms: Date.now() - t0, people: people.length }))
     if (people.length === 0) {
       console.log('[contact] no people', company, company_domain)
-      return { ok: false, code: 'no_people', message: `Could not find anyone at ${company} yet. Nothing was charged. Try another posting, or draft a note without a name.` }
+      return { ok: false, code: 'no_people', message: `Could not find anyone at ${company} yet. This lookup did not count. Try another posting, or draft a note without a name.` }
     }
     const fn = functionWord(title)
     people.sort((a, b) => rank(b, fn) - rank(a, fn))

@@ -1,11 +1,11 @@
 // Open a Stripe Checkout for the signed-in user, in their account's currency.
-// Two kinds: a plain top-up (one of the amounts in TOP_UPS), or exactly what
-// a review still needs after the balance is applied. Either way the payment
-// lands as balance; the review is then debited from it like any other step.
+// Two kinds: an email pack (emails + deep searches, from PACKS), or exactly
+// what a review still needs after the money balance is applied. A review
+// payment lands as money and the review is then debited from it.
 import { NextResponse } from 'next/server'
 import { isBlocked } from '@/lib/blocks'
 import { ensureAccount } from '@/lib/ledger'
-import { MIN_CHECKOUT, REVIEW_PRICE, TOP_UPS, money } from '@/lib/prices'
+import { MIN_CHECKOUT, REVIEW_PRICE, packById, packLabel } from '@/lib/prices'
 import { getReview } from '@/lib/review-store'
 import { readJson } from '@/lib/route'
 import { readSession } from '@/lib/session'
@@ -18,13 +18,14 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ ok: false, code: 'signed_out', message: 'Please sign in again.' }, { status: 401 })
   if (await isBlocked('sub', session.sub)) return NextResponse.json({ ok: false, code: 'blocked', message: 'This account has been suspended.' }, { status: 403 })
   if (!stripeEnabled()) return NextResponse.json({ ok: false, code: 'not_configured', message: 'Payments are not switched on yet. Try again later.' })
-  const body = await readJson<{ amount?: number; review_id?: string; return?: string }>(req)
+  const body = await readJson<{ pack?: string; review_id?: string; return?: string }>(req)
   const account = await ensureAccount(session)
   const c = account.currency
 
   let amount: number
   let label: string
   let reviewId: string | undefined
+  let packId: string | undefined
   if (body.review_id) {
     const review = await getReview(session.sub, String(body.review_id))
     if (!review || (review.status !== 'draft' && review.status !== 'failed')) {
@@ -36,17 +37,19 @@ export async function POST(req: Request) {
     label = 'Resume and profile review'
     reviewId = review.id
   } else {
-    const units = Number(body.amount)
-    if (!TOP_UPS[c].includes(units)) return NextResponse.json({ ok: false, code: 'invalid', message: 'Pick one of the amounts shown.' })
-    amount = units * 100
-    label = `${money(amount, c)} credits`
+    const pack = packById(body.pack)
+    if (!pack) return NextResponse.json({ ok: false, code: 'invalid', message: 'Pick one of the packs shown.' })
+    amount = pack.price[c]
+    label = packLabel(pack)
+    packId = pack.id
   }
 
   const url = await createCheckout(session, c, amount, {
     path: returnPath(body.return, reviewId),
     label,
-    purpose: reviewId ? 'review' : 'credits',
+    purpose: reviewId ? 'review' : 'pack',
     reviewId,
+    packId,
   })
   if (!url) return NextResponse.json({ ok: false, code: 'failed', message: 'Could not open the payment page. Try again in a minute.' })
   return NextResponse.json({ ok: true, data: { url } })
