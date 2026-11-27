@@ -124,7 +124,7 @@ export async function sendTest(cohort: Cohort): Promise<{ ok: boolean; to?: stri
   if (!ownSender()) return { ok: false, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first.' }
   const { sample } = await candidates(cohort)
   if (!sample) return { ok: false, error: 'Nobody left in this group to write for.' }
-  const out = await sendMail({ to: MAIL_REPLY_TO, ...sample, subject: `[test] ${sample.subject}` }, { requireOwnSender: true })
+  const out = await sendMail({ to: MAIL_REPLY_TO, ...sample, subject: `[test] ${sample.subject}` }, { requireOwnSender: true, noFallback: true })
   return out.ok ? { ok: true, to: MAIL_REPLY_TO } : { ok: false, error: `${out.code}${out.detail ? `: ${out.detail}` : ''}` }
 }
 
@@ -150,7 +150,7 @@ export async function sendAll(cohort: Cohort): Promise<{ sent: number; failed: n
         }
         const a = await getAccount(r.sub)
         const letter = a ? letterFor(a, cohort) : null
-        const out = letter ? await sendMail({ to: r.email, ...letter }, { requireOwnSender: true }).catch(() => ({ ok: false as const })) : { ok: false as const }
+        const out = letter ? await sendMail({ to: r.email, ...letter }, { requireOwnSender: true, noFallback: true }).catch(() => ({ ok: false as const })) : { ok: false as const }
         if (out.ok) {
           await put(marker(r.sub), JSON.stringify({ status: 'sent', cohort, at: new Date().toISOString() }), { access: 'private', contentType: 'application/json', addRandomSuffix: false, allowOverwrite: true }).catch(() => {})
           sent++
