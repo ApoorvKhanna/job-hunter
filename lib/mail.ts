@@ -17,8 +17,9 @@ const FALLBACK_FROM = 'Apoorv from Job Hunter <apoorv@notify.vaaya.ai>'
  *  bounces. */
 export const MAIL_REPLY_TO = process.env.MAIL_REPLY_TO ?? ''
 
-/** Resend's answer when the From domain is not (yet) verified on the account. */
-const unverified = (status: number, body: string) => status === 403 && /not verified|verify your domain|domain is not/i.test(body)
+/** Resend refusing the From domain: not verified on the account yet, or an API
+ *  key limited to another domain. Either way the fallback sender may work. */
+const unverified = (status: number, body: string) => status === 403 && /not verified|verify your domain|domain is not|not authorized to send emails from/i.test(body)
 
 /** Our own sender is set up: a key, and somewhere for replies to land. */
 export const ownSender = () => !!RESEND_API_KEY && !!MAIL_REPLY_TO
@@ -48,7 +49,7 @@ export async function sendMail(m: Mail, opts: { requireOwnSender?: boolean; noFa
       if (res.ok) return { ok: true, via: 'resend' }
       let detail = (await res.text()).slice(0, 300)
       if (unverified(res.status, detail) && opts.noFallback) {
-        return { ok: false, code: 'domain_unverified', detail: `${MAIL_FROM} is not verified in Resend yet: add its DNS records, then press Verify.` }
+        return { ok: false, code: 'domain_unverified', detail: `Resend will not send from ${MAIL_FROM} yet (${detail.replace(/"/g, "'")}). Verify the domain, and use an API key allowed to send from it.` }
       }
       if (unverified(res.status, detail) && MAIL_FROM !== FALLBACK_FROM) {
         console.log('[mail] own domain not verified yet, sending from the fallback')
