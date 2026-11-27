@@ -5,6 +5,7 @@ import CopyButton from '../copy-button'
 import Credits, { type PayConfig, type PayReason } from '../credits'
 import Header from '../header'
 import Icon from '../icons'
+import type { AlertView } from '@/lib/alerts'
 import { COUNTRIES, countryFlag } from '@/lib/countries'
 import { plural, postedOn } from '@/lib/format'
 import { type Currency, LEGACY_EMAIL_PRICE, type Step, type Wallet, money } from '@/lib/prices'
@@ -53,6 +54,7 @@ export default function Flow({
   pay,
   saved,
   notice,
+  alert: startAlert,
 }: {
   email: string
   wallet: Wallet
@@ -60,6 +62,7 @@ export default function Flow({
   pay: PayConfig
   saved: SavedSummary
   notice: string | null
+  alert: AlertView | null
 }) {
   const [step, setStep] = useState<StepIndex>(0)
   const [wallet, setWallet] = useState(startWallet)
@@ -86,6 +89,7 @@ export default function Flow({
   const [emails, setEmails] = useState<Record<string, { work: string[]; personal: string[] }>>({})
   const [person, setPerson] = useState<Person | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [alert, setAlert] = useState<AlertView | null>(startAlert)
 
   useEffect(() => {
     try {
@@ -360,6 +364,7 @@ export default function Flow({
           {jobs.length === 0 ? (
             <p className="muted">No jobs matched those titles in that date range on the free search. Try simpler titles, a longer date range, or a deep search. <button className="btn ghost sm" onClick={() => setStep(1)}>Edit search preferences</button></p>
           ) : null}
+          {profile ? <AlertToggle profile={profile} alert={alert} email={email} onSaved={setAlert} /> : null}
           {jobs.map((j) => (
             <div className="card" key={j.id}>
               <div className="row between">
@@ -545,5 +550,64 @@ function Skeletons({ rows }: { rows: number }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** The search as the weekly email would save it: the same shape the jobs route reads. */
+function searchOf(p: Profile) {
+  return {
+    titles: p.titles.map((t) => t.trim()).filter(Boolean).slice(0, 5),
+    country_code: /^[A-Z]{2}$/i.test(p.country_code ?? '') ? p.country_code.toUpperCase() : null,
+    remote: p.remote === true,
+  }
+}
+const titleKey = (ts: string[]) => [...new Set(ts.map((t) => t.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean))].sort().join('|')
+function sameSearch(a: AlertView, p: Profile): boolean {
+  const s = searchOf(p)
+  return titleKey(a.titles) === titleKey(s.titles) && (a.country ?? null) === s.country_code && a.remote === s.remote
+}
+function describeAlert(a: AlertView): string {
+  const country = a.country ? (COUNTRIES.find((c) => c.code === a.country)?.name ?? a.country) : null
+  return `${a.titles.join(', ')}${country ? ` in ${country}` : ''}${a.remote ? ', remote only' : ''}`
+}
+
+/** Opt-in weekly email for the search on screen. Off unless the user turns it on. */
+function AlertToggle({ profile, alert, email, onSaved }: { profile: Profile; alert: AlertView | null; email: string; onSaved: (a: AlertView | null) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const search = searchOf(profile)
+  if (search.titles.length === 0) return null
+  const onHere = !!alert?.on && sameSearch(alert, profile)
+  const other = alert?.on && !onHere ? alert : null
+
+  async function toggle(on: boolean) {
+    setBusy(true)
+    setErr(null)
+    const r = await post<AlertView | null>('/api/alerts', { on, ...search })
+    setBusy(false)
+    if (!r.ok) {
+      setErr(r.message)
+      return
+    }
+    onSaved(r.data)
+    track(on ? 'alert_on' : 'alert_off', { titles: search.titles.length, country: search.country_code, remote: search.remote, ...(on && other ? { switched: true } : {}) })
+  }
+
+  return (
+    <label className="alert-opt">
+      <input type="checkbox" role="switch" className="switch" checked={onHere} disabled={busy} onChange={(e) => toggle(e.target.checked)} />
+      <span>
+        <span className="alert-label">Email me new matches every Monday</span>
+        <span className={`alert-sub${err ? ' alert-err' : ''}`} aria-live="polite">
+          {err
+            ? err
+            : onHere
+              ? `On. New postings for this search go to ${email} each Monday. Turn it off here or from any of the emails.`
+              : other
+                ? `Your Monday email is set to ${describeAlert(other)}. Turn this on to switch it to this search.`
+                : 'Free. One short email a week with postings you have not seen yet. Turn it off any time.'}
+        </span>
+      </span>
+    </label>
   )
 }

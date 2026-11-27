@@ -532,3 +532,16 @@ html { scroll-behavior: smooth; }
 .share-card .btn:hover { background: oklch(1 0 0); }
 .share-about { margin: 16px 4px 0; text-align: center; }
 @media (max-width: 480px) { .share-score { font-size: 104px; } }
+
+/* ── Weekly job alerts: the opt-in switch on the results step ─────────────── */
+.alert-opt { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); box-shadow: var(--shadow-1), var(--highlight); cursor: pointer; }
+.alert-opt .alert-label { display: block; font-weight: 600; font-size: 14px; }
+.alert-opt .alert-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.alert-opt .alert-sub.alert-err { color: var(--err); }
+.switch { appearance: none; -webkit-appearance: none; flex-shrink: 0; position: relative; width: 36px; height: 20px; margin: 1px 0 0; border-radius: 999px; background: var(--line-strong); cursor: pointer; transition: background-color var(--dur-2) var(--ease-out); }
+.switch::before { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-2); box-shadow: 0 1px 2px oklch(0 0 0 / 0.25); transition: transform var(--dur-2) var(--ease-spring); }
+.switch:checked { background: var(--ok); }
+.switch:checked::before { transform: translateX(16px); }
+.switch:disabled { opacity: 0.5; cursor: default; }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ── end weekly job alerts ────────────────────────────────────────────────── */

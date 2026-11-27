@@ -84,10 +84,36 @@ holding money from before packs (old top-ups, manual UPI, the old welcome
 credit) spend it on emails at ₹20 / $0.36 each, and on reviews.
 
 PostHog events for the funnel: `paywall_shown` (with `reason`),
-`checkout_opened`, `search_done`, `email_found`, `review_preview`.
+`checkout_opened`, `search_done`, `email_found`, `review_preview`,
+`alert_on`, `alert_off`.
 
 A review costs roughly 10 to 15¢ in backend calls (the free scan about 4¢ of it, and a paid run reuses it): the model (scan plus
 evaluation) and up to 1¢ to 4¢ per profile read.
+
+## Weekly job alerts
+
+Opt-in only. On the results step a switch, "Email me new matches every
+Monday", saves that search (titles, country, remote) to
+`alerts/<sub>.json`; it is off until the user turns it on. One search per
+user: turning it on for another search replaces the old one.
+
+A Vercel cron (`vercel.json`, `30 3 * * 1`, Monday 09:00 IST) calls
+`/api/cron/alerts` with `Bearer $CRON_SECRET`; without `CRON_SECRET` set the
+route refuses every request. For each alert that is on, it searches the last
+7 days on the cheap source only (never TheirStack), drops postings already
+sent (`sentJobIds`, the last 200), and sends one email with up to 8 postings
+and a "Find who's hiring" link to `/jobs`. No new postings, no email. It runs
+5 at a time, at most 250 alerts per run, least recently written first, and
+logs `[alerts] run {checked, sent, skipped, failed, deferred, …}`. A second
+run in the same week sends nothing twice.
+
+Every email carries a one-click unsubscribe link,
+`/api/alerts/unsubscribe?u=<sub>&t=<HMAC of the sub under SESSION_SECRET>`,
+that needs no sign-in. Rotating `SESSION_SECRET` invalidates the links in
+emails already sent (and signs everyone out).
+
+Cost per opted-in user per week: one search (about 1¢, capped at 2¢), plus
+one mail send only when there is something new (capped at 2¢).
 
 ## Setup
 
@@ -109,6 +135,7 @@ Environment variables (all on Vercel → Settings → Environment Variables):
 | `UPI_ID`, `UPI_NAME` | Manual UPI fallback, e.g. `name@upi`. Only shown while Stripe is off |
 | `AUTO_CREDIT_INR_PER_DAY` | Manual UPI: instant credit per account per day. Default 99 |
 | `ADMIN_TOKEN` | Guards `/admin` and the recharge approval API |
+| `CRON_SECRET` | 16+ random characters. Vercel sends it to `/api/cron/alerts` as `Bearer …`; unset, the weekly job email never runs |
 | `VAAYA_CUSTOMERS_ENABLED` | `true` to give every login its own wallet on the backend (see below). Off by default. |
 | `VAAYA_OWNER_KEY` | The account's primary, unrestricted key. Only used to create, fund and mint tokens for customers; the backend refuses capped keys there. |
 | `CUSTOMER_BUDGET_CENTS`, `CUSTOMER_WELCOME_CENTS` | Per-user spend ceiling and first funding, in US cents. Defaults 500 and 49. |
@@ -151,6 +178,9 @@ app/api/checkout           opens Stripe Checkout (a pack, or a review)
 app/api/stripe/webhook     credits a completed payment
 app/api/recharge           manual UPI: user reports a payment
 app/api/admin/recharges    operator lists / approves
+app/api/alerts             weekly job email on / off; unsubscribe/ is the link in the email
+app/api/cron/alerts        the Monday run (Vercel cron, vercel.json)
+lib/alerts.ts              alert storage, the email, the weekly run
 lib/ledger.ts              balances in the account's currency (Vercel Blob)
 lib/stripe.ts              Checkout + webhook verification
 lib/review.ts              the review pipeline and its prompts
