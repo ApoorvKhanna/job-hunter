@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { getAlert, viewOf } from '@/lib/alerts'
 import { ensureAccount, walletOf } from '@/lib/ledger'
 import { listSaved } from '@/lib/saved'
 import { readSession } from '@/lib/session'
@@ -12,7 +13,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   if (!session) redirect('/')
   await ensureAccount(session)
   const notice = await settleReturn(session.sub, (await searchParams).topup)
-  const [account, items] = await Promise.all([ensureAccount(session), listSaved(session.sub)])
+  const [account, items, alert] = await Promise.all([
+    ensureAccount(session),
+    listSaved(session.sub),
+    // The weekly email toggle; a read failure only hides its saved state.
+    getAlert(session.sub).catch(() => null),
+  ])
   const notes = items.filter((i) => i.kind === 'note')
   const saved = {
     jobs: items.filter((i) => i.kind === 'job').length,
@@ -24,5 +30,5 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       person: n.kind === 'note' ? n.person : null,
     })),
   }
-  return <Flow email={session.email} wallet={walletOf(account)} currency={account.currency} pay={payConfig()} saved={saved} notice={notice} />
+  return <Flow email={session.email} wallet={walletOf(account)} currency={account.currency} pay={payConfig()} saved={saved} notice={notice} alert={alert ? viewOf(alert) : null} />
 }
