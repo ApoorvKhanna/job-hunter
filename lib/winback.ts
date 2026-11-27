@@ -178,9 +178,12 @@ export async function sendAll(cohort: Cohort, now = Date.now()): Promise<{ sent:
   let sent = 0
   let failed = 0
   let skipped = 0
-  for (let i = 0; i < batch.length; i += 5) {
+  // One at a time, a quarter second apart: the Resend account's limit (10 a
+  // second) is shared with other apps.
+  for (let i = 0; i < batch.length; i += 1) {
+    if (i > 0) await new Promise((res) => setTimeout(res, 250))
     await Promise.all(
-      batch.slice(i, i + 5).map(async (r) => {
+      batch.slice(i, i + 1).map(async (r) => {
         try {
           await put(marker(r.sub), JSON.stringify({ status: 'sending', cohort, at: new Date().toISOString() }), { access: 'private', contentType: 'application/json', addRandomSuffix: false, allowOverwrite: false })
         } catch {
@@ -215,7 +218,11 @@ export async function sendAll(cohort: Cohort, now = Date.now()): Promise<{ sent:
 export async function runDaily(now = Date.now()): Promise<{ launch: Awaited<ReturnType<typeof sendAll>> | null; earlier: Awaited<ReturnType<typeof sendAll>> | null; error?: string }> {
   if (!ownSender()) return { launch: null, earlier: null, error: 'no_sender' }
   const launch = await sendAll('launch', now)
-  const earlier = launch.todayLeft > 0 ? await sendAll('earlier', now) : null
+  // The earlier group starts only once everyone in the launch group has had a
+  // note (or the only ones left are those whose send just failed; they are
+  // first in line again tomorrow).
+  const launchDone = launch.left - launch.failed <= 0
+  const earlier = launch.todayLeft > 0 && launchDone ? await sendAll('earlier', now) : null
   console.log('[winback] daily', JSON.stringify({ day: istDay(now), launch: launch && { sent: launch.sent, left: launch.left }, earlier: earlier && { sent: earlier.sent, left: earlier.left } }))
   return { launch, earlier }
 }

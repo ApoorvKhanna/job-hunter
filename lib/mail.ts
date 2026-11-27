@@ -29,7 +29,17 @@ export type MailResult = { ok: true; via: 'resend' | 'agentmail' } | { ok: false
 
 export async function sendMail(m: Mail, opts: { requireOwnSender?: boolean; noFallback?: boolean } = {}): Promise<MailResult> {
   if (RESEND_API_KEY) {
-    const post = (from: string) =>
+    // Resend allows 10 requests a second per account (shared with every other
+    // app on it): on a 429, wait as long as it says and try again.
+    const post = async (from: string): Promise<Response> => {
+      for (let attempt = 0; ; attempt++) {
+        const res = await send(from)
+        if (res.status !== 429 || attempt === 3) return res
+        const wait = Math.min(5000, (Number(res.headers.get('retry-after')) || 1) * 1000 + attempt * 500)
+        await new Promise((r) => setTimeout(r, wait))
+      }
+    }
+    const send = (from: string) =>
       fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { authorization: `Bearer ${RESEND_API_KEY}`, 'content-type': 'application/json' },
