@@ -17,7 +17,7 @@ import { APP_URL, SESSION_SECRET } from './env'
 import { postedOn } from './format'
 import { jsearchEnabled, searchJobs } from './jsearch'
 import { getAccount } from './ledger'
-import { run } from './provider'
+import { sendMail } from './mail'
 import type { Job } from './types'
 
 export interface Alert {
@@ -326,7 +326,10 @@ async function alertOne(sub: string, now: number): Promise<Outcome> {
   if (fresh.length === 0) return skip('nothing_new')
 
   const mail = buildAlertEmail({ ...a, name: account.name || a.name }, fresh)
-  const out = await run<unknown>('agentmail', 'send', { to, subject: mail.subject, text: mail.text, html: mail.html }, 2)
+  // List-Unsubscribe lets Gmail and others show their own unsubscribe button;
+  // with the -Post header they POST to the link, which turns the alert off.
+  const unsub = unsubscribeUrl(a.sub)
+  const out = await sendMail({ to, subject: mail.subject, text: mail.text, html: mail.html, headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } })
   if (!out.ok) {
     console.error('[alerts] mail failed', JSON.stringify({ sub, code: out.detail ?? out.code }))
     return { kind: 'failed', reason: 'mail' }

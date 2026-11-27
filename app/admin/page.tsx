@@ -61,7 +61,7 @@ export default function Admin() {
             </div>
           ))
         : null}
-      {token ? <WinBack token={token} /> : null}
+      {token ? <><WinBack token={token} cohort="launch" /><WinBack token={token} cohort="earlier" /></> : null}
       <h2>Pending UPI recharges</h2>
       {rows && rows.every((r) => r.pending.length === 0) ? <p className="muted">None. Payments up to the daily cap are credited instantly and listed below for review.</p> : null}
       {rows?.map((r) =>
@@ -140,6 +140,7 @@ export default function Admin() {
 }
 
 interface WinBackPreview {
+  label: string
   count: number
   sample: { subject: string; text: string } | null
   recipients: Array<{ email: string; name: string; createdAt: string; line: string }>
@@ -147,34 +148,35 @@ interface WinBackPreview {
 
 // The one-time note to launch-day sign-ups (lib/winback.ts). Preview first:
 // the list and the exact text. Sending asks once more, and nobody gets it twice.
-function WinBack({ token }: { token: string }) {
+function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier' }) {
   const [preview, setPreview] = useState<WinBackPreview | null>(null)
   const [state, setState] = useState('')
   async function look() {
     setState('loading…')
-    const r = await fetch('/api/admin/winback', { headers: { 'x-admin-token': token } })
+    const r = await fetch(`/api/admin/winback?cohort=${cohort}`, { headers: { 'x-admin-token': token } })
     if (!r.ok) return setState('could not load')
     setPreview(((await r.json()) as { data: WinBackPreview }).data)
     setState('')
   }
   async function send() {
-    if (!preview || !window.confirm(`Send the note to ${preview.count} people? Each person gets it once.`)) return
+    const batch = Math.min(preview?.count ?? 0, 150)
+    if (!preview || !window.confirm(`Send the note to the next ${batch} of ${preview.count} people? Each person gets it once.`)) return
     setState('sending…')
-    const r = await fetch('/api/admin/winback', { method: 'POST', headers: { 'x-admin-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ send: true }) })
-    const j = (await r.json().catch(() => null)) as { data?: { sent: number; failed: number; skipped: number } } | null
-    setState(j?.data ? `sent ${j.data.sent}, failed ${j.data.failed}, already had it ${j.data.skipped}` : 'send failed')
+    const r = await fetch('/api/admin/winback', { method: 'POST', headers: { 'x-admin-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ send: true, cohort }) })
+    const j = (await r.json().catch(() => null)) as { data?: { sent: number; failed: number; skipped: number; left: number; error?: string } } | null
+    setState(j?.data?.error ?? (j?.data ? `sent ${j.data.sent}, failed ${j.data.failed}, already had it ${j.data.skipped}, ${j.data.left} left` : 'send failed'))
     void look()
   }
   return (
     <section className="card" style={{ margin: '18px 0' }}>
       <div className="row between">
-        <b>Launch-day win-back note</b>
+        <b>{cohort === 'launch' ? 'Win-back note: launch day' : 'Win-back note: earlier sign-ups'}</b>
         <span className="row">
           <button className="btn ghost sm" onClick={look}>Preview</button>
-          {preview && preview.count > 0 ? <button className="btn sm" onClick={send}>Send to {preview.count} people</button> : null}
+          {preview && preview.count > 0 ? <button className="btn sm" onClick={send}>Send to {Math.min(preview.count, 150)} of {preview.count}</button> : null}
         </span>
       </div>
-      <p className="small muted" style={{ margin: '6px 0 0' }}>Signed up 26 Nov to 27 Nov 12:10 IST, never paid, not blocked, not sent before. {state}</p>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>{preview?.label ?? (cohort === 'launch' ? 'Signed up 26 Nov to 27 Nov 12:10 IST' : 'Signed up before launch')}. Never paid, not blocked, no note sent before. {state}</p>
       {preview ? (
         <>
           {preview.sample ? (
