@@ -12,7 +12,7 @@ import { isBlocked } from './blocks'
 import { APP_URL } from './env'
 import { type Account, getAccount, hasPaid } from './ledger'
 import { LEGACY_EMAIL_PRICE, PACKS, money } from './prices'
-import { sendMail, ownSender } from './mail'
+import { MAIL_REPLY_TO, ownSender, sendMail } from './mail'
 
 export type Cohort = 'launch' | 'earlier'
 
@@ -115,6 +115,17 @@ export async function candidates(cohort: Cohort): Promise<{ recipients: Recipien
     recipients: eligible.map((a) => ({ sub: a.sub, email: a.email, name: a.name, createdAt: a.createdAt, line: balanceLine(a) })),
     sample: eligible[0] ? letterFor(eligible[0], cohort) : null,
   }
+}
+
+/** One copy of the group's note, written for its first recipient, sent to
+ *  the reply-to inbox so the operator sees exactly what goes out. Marks
+ *  nobody. */
+export async function sendTest(cohort: Cohort): Promise<{ ok: boolean; to?: string; error?: string }> {
+  if (!ownSender()) return { ok: false, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first.' }
+  const { sample } = await candidates(cohort)
+  if (!sample) return { ok: false, error: 'Nobody left in this group to write for.' }
+  const out = await sendMail({ to: MAIL_REPLY_TO, ...sample, subject: `[test] ${sample.subject}` }, { requireOwnSender: true })
+  return out.ok ? { ok: true, to: MAIL_REPLY_TO } : { ok: false, error: `${out.code}${out.detail ? `: ${out.detail}` : ''}` }
 }
 
 /** Send to up to PER_RUN people still eligible in the group. The marker is

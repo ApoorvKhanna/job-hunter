@@ -158,6 +158,12 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
     setPreview(((await r.json()) as { data: WinBackPreview }).data)
     setState('')
   }
+  async function test() {
+    setState('sending a test…')
+    const r = await fetch('/api/admin/winback', { method: 'POST', headers: { 'x-admin-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ test: true, cohort }) })
+    const j = (await r.json().catch(() => null)) as { data?: { ok: boolean; to?: string; error?: string } } | null
+    setState(j?.data?.ok ? `test sent to ${j.data.to}` : (j?.data?.error ?? 'test failed'))
+  }
   async function send() {
     const batch = Math.min(preview?.count ?? 0, 150)
     if (!preview || !window.confirm(`Send the note to the next ${batch} of ${preview.count} people? Each person gets it once.`)) return
@@ -173,6 +179,7 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
         <b>{cohort === 'launch' ? 'Win-back note: launch day' : 'Win-back note: earlier sign-ups'}</b>
         <span className="row">
           <button className="btn ghost sm" onClick={look}>Preview</button>
+          {preview && preview.count > 0 ? <button className="btn ghost sm" onClick={test}>Send me a test</button> : null}
           {preview && preview.count > 0 ? <button className="btn sm" onClick={send}>Send to {Math.min(preview.count, 150)} of {preview.count}</button> : null}
         </span>
       </div>
