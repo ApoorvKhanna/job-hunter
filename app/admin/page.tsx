@@ -142,6 +142,7 @@ export default function Admin() {
 interface WinBackPreview {
   label: string
   count: number
+  today: { limit: number; sentToday: number; left: number; day: number }
   sample: { subject: string; text: string } | null
   recipients: Array<{ email: string; name: string; createdAt: string; line: string }>
 }
@@ -165,12 +166,13 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
     setState(j?.data?.ok ? `test sent to ${j.data.to}` : (j?.data?.error ?? 'test failed'))
   }
   async function send() {
-    const batch = Math.min(preview?.count ?? 0, 150)
-    if (!preview || !window.confirm(`Send the note to the next ${batch} of ${preview.count} people? Each person gets it once.`)) return
+    const batch = Math.min(preview?.count ?? 0, preview?.today.left ?? 0)
+    if (!preview || batch === 0) return setState("Today's warm-up limit is reached. Send the rest tomorrow.")
+    if (!window.confirm(`Send the note to the next ${batch} of ${preview.count} people? Each person gets it once.`)) return
     setState('sending…')
     const r = await fetch('/api/admin/winback', { method: 'POST', headers: { 'x-admin-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ send: true, cohort }) })
-    const j = (await r.json().catch(() => null)) as { data?: { sent: number; failed: number; skipped: number; left: number; error?: string } } | null
-    setState(j?.data?.error ?? (j?.data ? `sent ${j.data.sent}, failed ${j.data.failed}, already had it ${j.data.skipped}, ${j.data.left} left` : 'send failed'))
+    const j = (await r.json().catch(() => null)) as { data?: { sent: number; failed: number; skipped: number; left: number; todayLeft: number; error?: string } } | null
+    setState(j?.data?.error ?? (j?.data ? `sent ${j.data.sent}, failed ${j.data.failed}, already had it ${j.data.skipped}; ${j.data.left} still to go, ${j.data.todayLeft} more allowed today` : 'send failed'))
     void look()
   }
   return (
@@ -180,7 +182,7 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
         <span className="row">
           <button className="btn ghost sm" onClick={look}>Preview</button>
           {preview && preview.count > 0 ? <button className="btn ghost sm" onClick={test}>Send me a test</button> : null}
-          {preview && preview.count > 0 ? <button className="btn sm" onClick={send}>Send to {Math.min(preview.count, 150)} of {preview.count}</button> : null}
+          {preview && preview.count > 0 ? <button className="btn sm" onClick={send} disabled={preview.today.left === 0}>Send to {Math.min(preview.count, preview.today.left)} of {preview.count}</button> : null}
         </span>
       </div>
       <p className="small muted" style={{ margin: '6px 0 0' }}>{preview?.label ?? (cohort === 'launch' ? 'Signed up 26 Nov to 27 Nov 12:10 IST' : 'Signed up before launch')}. Never paid, not blocked, no note sent before. {state}</p>
@@ -190,7 +192,7 @@ function WinBack({ token, cohort }: { token: string; cohort: 'launch' | 'earlier
             <>
               <p className="small" style={{ margin: '12px 0 4px' }}><b>Subject:</b> {preview.sample.subject}</p>
               <pre className="note" style={{ whiteSpace: 'pre-wrap' }}>{preview.sample.text}</pre>
-              <p className="small muted">The balance line changes per person (shown below).</p>
+              <p className="small muted">The balance line and month change per person (shown below). Warm-up: sending day {preview.today.day}, {preview.today.sentToday} of {preview.today.limit} sent today across both groups.</p>
             </>
           ) : <p className="muted">Nobody left to send to.</p>}
           <ul className="small" style={{ maxHeight: 260, overflow: 'auto', paddingLeft: 18 }}>

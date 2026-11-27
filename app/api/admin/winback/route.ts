@@ -5,7 +5,7 @@
 import { NextResponse } from 'next/server'
 import { ADMIN_TOKEN } from '@/lib/env'
 import { readJson } from '@/lib/route'
-import { COHORTS, candidates, isCohort, sendAll, sendTest } from '@/lib/winback'
+import { COHORTS, allowanceToday, candidates, isCohort, sendAll, sendTest } from '@/lib/winback'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -19,8 +19,8 @@ export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ ok: false }, { status: 401 })
   const cohort = new URL(req.url).searchParams.get('cohort') ?? 'launch'
   if (!isCohort(cohort)) return NextResponse.json({ ok: false, message: 'Unknown group.' }, { status: 400 })
-  const { recipients, sample } = await candidates(cohort)
-  return NextResponse.json({ ok: true, data: { cohort, label: COHORTS[cohort].label, count: recipients.length, sample, recipients: recipients.map((r) => ({ email: r.email, name: r.name, createdAt: r.createdAt, line: r.line })) } })
+  const [{ recipients, sample }, today] = await Promise.all([candidates(cohort), allowanceToday()])
+  return NextResponse.json({ ok: true, data: { cohort, label: COHORTS[cohort].label, count: recipients.length, today, sample, recipients: recipients.map((r) => ({ email: r.email, name: r.name, createdAt: r.createdAt, line: r.line })) } })
 }
 
 export async function POST(req: Request) {

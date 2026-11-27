@@ -7,12 +7,21 @@
 // The operator previews each group's list and text on /admin and sends it from
 // there. Each account gets at most one note across both groups (a marker blob,
 // `winback/<sub>.json`, written before the send).
+//
+// Deliverability, since thejobhunter.in is a brand-new sending domain:
+//   - Plain words, one link, no button, no prices or currency, no "free" or
+//     other promotional stacking: it should read like a note from a person.
+//   - A one-click unsubscribe (headers + a line in the body), so people who do
+//     not want it unsubscribe instead of reporting spam.
+//   - A daily warm-up cap (WARMUP), counted across both groups, so the domain
+//     builds a reputation before it sends in volume.
 import { del, list, put } from '@vercel/blob'
 import { isBlocked } from './blocks'
 import { APP_URL } from './env'
 import { type Account, getAccount, hasPaid } from './ledger'
-import { LEGACY_EMAIL_PRICE, PACKS, money } from './prices'
 import { MAIL_REPLY_TO, ownSender, sendMail } from './mail'
+import { optOutHeaders, optOutUrl, optedOut } from './optout'
+import { LEGACY_EMAIL_PRICE } from './prices'
 
 export type Cohort = 'launch' | 'earlier'
 
@@ -24,15 +33,17 @@ export const COHORTS: Record<Cohort, { from: string; to: string; label: string }
 
 export const isCohort = (c: unknown): c is Cohort => c === 'launch' || c === 'earlier'
 
-/** Sends per click, so one request stays well inside the function's time
- *  limit. The panel shows what is left; click again for the rest. */
-const PER_RUN = 150
+/** Most notes per sending day: day 1 of sending, day 2, ... and then the last
+ *  number from there on. A new domain starts small (10-20 a day is the usual
+ *  advice) and ramps as nobody complains. */
+export const WARMUP = [20, 35, 60, 100, 150] as const
 
 export interface Recipient { sub: string; email: string; name: string; createdAt: string; line: string }
 export interface Letter { subject: string; text: string; html: string }
 
 const marker = (sub: string) => `winback/${sub}.json`
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+const DAY = 86_400_000
 
 function firstName(name: string): string {
   return (name.trim().split(/\s+/)[0] || 'there').toLowerCase()
@@ -43,69 +54,92 @@ function monthOf(iso: string): string {
   return MONTHS[new Date(Date.parse(iso) + 5.5 * 3600e3).getUTCMonth()]
 }
 
-/** What their old balance still buys, in one line. */
+/** What their old balance still covers, without naming an amount. Empty when
+ *  there is nothing to say. */
 function balanceLine(a: Account): string {
-  const legacy = LEGACY_EMAIL_PRICE[a.currency]
-  const n = Math.floor(a.balance / legacy)
-  if (n > 0) return `your ${money(a.balance, a.currency)} balance still covers ${n} work ${n === 1 ? 'email' : 'emails'}, and drafting the note is free.`
-  return `emails come in packs from ${money(PACKS[0].price[a.currency], a.currency)}, and drafting the note is free.`
+  const n = Math.floor(a.balance / LEGACY_EMAIL_PRICE[a.currency])
+  return n > 0 ? `your account still has enough for ${n} work ${n === 1 ? 'email' : 'emails'}.` : ''
 }
 
-function render(paragraphs: string[], cta: { href: string; label: string }): string {
-  const p = 'font-size:15px;line-height:1.6;margin:0 0 14px'
-  const body = paragraphs.map((t) => `<p style="${p}">${t}</p>`).join('')
-  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:28px 20px;color:#1d1d1f">${body}<p style="margin:0 0 22px"><a href="${cta.href}" style="display:inline-block;background:#1e2f96;color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600">${cta.label}</a></p><p style="${p}">apoorv</p><p style="font-size:12px;color:#7a7f87;margin:18px 0 0">A one-time note about the change. You will not get more like it.</p></div>`
+const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** Plain paragraphs, the link written out, a small opt-out line. No button,
+ *  no colours, no images: it should look like a note, not a campaign. */
+function render(paragraphs: string[], link: string, optout: string, why: string): string {
+  const p = 'margin:0 0 14px'
+  const body = paragraphs.map((t) => `<p style="${p}">${escape(t)}</p>`).join('')
+  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1d1d1f;max-width:560px">${body}<p style="${p}"><a href="${link}">${link}</a></p><p style="${p}">apoorv</p><p style="margin:18px 0 0;font-size:12px;color:#6b6f76">${escape(why)} <a href="${optout}" style="color:#6b6f76">Stop emails from Job Hunter</a>.</p></div>`
 }
 
 export function letterFor(a: Account, cohort: Cohort): Letter {
   const hi = firstName(a.name)
   const line = balanceLine(a)
-  const footer = ['apoorv', '', 'a one-time note about the change. you will not get more like it.']
+  const optout = optOutUrl(a.sub)
   if (cohort === 'launch') {
     const link = `${APP_URL}/jobs`
+    const why = 'You signed up for Job Hunter on launch day. This is a one-time note.'
     const paras = [
       `hi ${hi}... apoorv here, I built job hunter.`,
-      'on launch day it asked you to pay before showing you a single job. that was the wrong call.',
-      `it's fixed... searching and finding the people hiring are free now. ${line}`,
+      'on launch day it asked you to pay before you could see a single job. that was a mistake, and I have changed it.',
+      `you can now search jobs and see who is hiring at each company before deciding anything.${line ? ` ${line}` : ''}`,
+      'if you are still looking, it is here:',
     ]
     return {
-      subject: 'searching on job hunter is free now',
-      text: [...paras.flatMap((x) => [x, '']), `pick up where you left off: ${link}`, '', ...footer].join('\n'),
-      html: render(paras, { href: link, label: 'Pick up where you left off' }),
+      subject: 'job hunter, after launch day',
+      text: [...paras.flatMap((x) => [x, '']), link, '', 'apoorv', '', `${why} Stop emails from Job Hunter: ${optout}`].join('\n'),
+      html: render(paras, link, optout, why),
     }
   }
   const link = `${APP_URL}/app`
+  const month = monthOf(a.createdAt)
+  const why = `You signed up for Job Hunter in ${month[0].toUpperCase()}${month.slice(1)}. This is a one-time note.`
   const paras = [
     `hi ${hi}... apoorv here, I built job hunter.`,
-    `you tried it back in ${monthOf(a.createdAt)}. a lot has changed since.`,
-    `searching for jobs and finding the people hiring are free now, and there's a free 6-second scan that shows where a recruiter's eye lands on your resume. ${line}`,
+    `you tried it back in ${month}. a lot has changed since then.`,
+    `searching jobs and seeing who is hiring at each company no longer cost anything, and there is a new 6-second resume scan that shows where a recruiter's eye lands first.${line ? ` ${line}` : ''}`,
+    'if you are still looking, it is here:',
   ]
   return {
-    subject: 'job hunter is free to search now',
-    text: [...paras.flatMap((x) => [x, '']), `have a look: ${link}`, '', ...footer].join('\n'),
-    html: render(paras, { href: link, label: 'Have a look' }),
+    subject: `job hunter has changed since ${month}`,
+    text: [...paras.flatMap((x) => [x, '']), link, '', 'apoorv', '', `${why} Stop emails from Job Hunter: ${optout}`].join('\n'),
+    html: render(paras, link, optout, why),
   }
 }
 
-async function listAll(prefix: string): Promise<string[]> {
-  const out: string[] = []
+async function listAll(prefix: string): Promise<Array<{ name: string; at: number }>> {
+  const out: Array<{ name: string; at: number }> = []
   let cursor: string | undefined
   do {
     const page = await list({ prefix, cursor, limit: 1000 })
-    for (const b of page.blobs) out.push(b.pathname.slice(prefix.length).replace(/\.json$/, ''))
+    for (const b of page.blobs) out.push({ name: b.pathname.slice(prefix.length).replace(/\.json$/, ''), at: new Date(b.uploadedAt).getTime() })
     cursor = page.hasMore ? page.cursor : undefined
   } while (cursor)
   return out
 }
 
-/** Everyone in the group who never paid, is not blocked, and has not had a
- *  note (from either group). */
+/** How many more notes may go out today under the warm-up, across both groups.
+ *  Day 1 is the day of the first note ever sent. */
+export async function allowanceToday(now = Date.now()): Promise<{ limit: number; sentToday: number; left: number; day: number }> {
+  const markers = await listAll('winback/')
+  const first = markers.length ? Math.min(...markers.map((m) => m.at)) : now
+  const day = Math.floor((now - first) / DAY) + 1
+  const limit = WARMUP[Math.min(day, WARMUP.length) - 1]
+  const sentToday = markers.filter((m) => now - m.at < DAY).length
+  return { limit, sentToday, left: Math.max(0, limit - sentToday), day }
+}
+
+/** Everyone in the group who never paid, is not blocked, did not opt out, and
+ *  has not had a note (from either group). */
 export async function candidates(cohort: Cohort): Promise<{ recipients: Recipient[]; sample: Letter | null }> {
   const win = COHORTS[cohort]
-  const [done, subs] = await Promise.all([listAll('winback/').then((x) => new Set(x)), listAll('users/')])
+  const [done, subs, off] = await Promise.all([
+    listAll('winback/').then((x) => new Set(x.map((m) => m.name))),
+    listAll('users/').then((x) => x.map((m) => m.name)),
+    optedOut(),
+  ])
   const eligible: Account[] = []
   for (let i = 0; i < subs.length; i += 25) {
-    const batch = await Promise.all(subs.slice(i, i + 25).filter((s) => !done.has(s)).map((s) => getAccount(s).catch(() => null)))
+    const batch = await Promise.all(subs.slice(i, i + 25).filter((s) => !done.has(s) && !off.has(s)).map((s) => getAccount(s).catch(() => null)))
     const inWindow = batch.filter((a): a is Account => !!a && !!a.email && a.createdAt >= win.from && a.createdAt < win.to && !hasPaid(a))
     const blocked = await Promise.all(inWindow.map((a) => isBlocked('sub', a.sub)))
     eligible.push(...inWindow.filter((_, k) => !blocked[k]))
@@ -117,31 +151,34 @@ export async function candidates(cohort: Cohort): Promise<{ recipients: Recipien
   }
 }
 
-/** One copy of the group's note, written for its first recipient, sent to
- *  the reply-to inbox so the operator sees exactly what goes out. Marks
- *  nobody. */
+/** Exactly the note the group's first recipient would get (same subject,
+ *  same headers), sent to the reply-to inbox, so where it lands there is where
+ *  the real ones will land. Marks nobody and does not count toward the cap. */
 export async function sendTest(cohort: Cohort): Promise<{ ok: boolean; to?: string; error?: string }> {
   if (!ownSender()) return { ok: false, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first.' }
-  const { sample } = await candidates(cohort)
-  if (!sample) return { ok: false, error: 'Nobody left in this group to write for.' }
-  const out = await sendMail({ to: MAIL_REPLY_TO, ...sample, subject: `[test] ${sample.subject}` }, { requireOwnSender: true, noFallback: true })
+  const { recipients, sample } = await candidates(cohort)
+  if (!sample || !recipients[0]) return { ok: false, error: 'Nobody left in this group to write for.' }
+  const out = await sendMail({ to: MAIL_REPLY_TO, ...sample, headers: optOutHeaders(recipients[0].sub) }, { requireOwnSender: true, noFallback: true })
   return out.ok ? { ok: true, to: MAIL_REPLY_TO } : { ok: false, error: `${out.code}${out.detail ? `: ${out.detail}` : ''}` }
 }
 
-/** Send to up to PER_RUN people still eligible in the group. The marker is
- *  written first, so two clicks can never send anyone two copies; a failed
- *  send clears it, so a later run retries just those. */
-export async function sendAll(cohort: Cohort): Promise<{ sent: number; failed: number; skipped: number; left: number; error?: string }> {
+/** Send to as many people still eligible in the group as today's warm-up
+ *  allows. The marker is written first, so two clicks can never send anyone
+ *  two copies; a failed send clears it, so a later run retries just those. */
+export async function sendAll(cohort: Cohort, now = Date.now()): Promise<{ sent: number; failed: number; skipped: number; left: number; todayLeft: number; error?: string }> {
   // Written as Apoorv: only from our own sender, never the shared agentmail inbox.
-  if (!ownSender()) return { sent: 0, failed: 0, skipped: 0, left: 0, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first, so this goes from Job Hunter and replies reach you.' }
-  const { recipients } = await candidates(cohort)
-  const now = recipients.slice(0, PER_RUN)
+  if (!ownSender()) return { sent: 0, failed: 0, skipped: 0, left: 0, todayLeft: 0, error: 'Set RESEND_API_KEY and MAIL_REPLY_TO first, so this goes from Job Hunter and replies reach you.' }
+  const [{ recipients }, today] = await Promise.all([candidates(cohort), allowanceToday(now)])
+  if (today.left === 0) {
+    return { sent: 0, failed: 0, skipped: 0, left: recipients.length, todayLeft: 0, error: `Today's warm-up limit is reached (${today.limit} on sending day ${today.day}). Send the rest tomorrow.` }
+  }
+  const batch = recipients.slice(0, today.left)
   let sent = 0
   let failed = 0
   let skipped = 0
-  for (let i = 0; i < now.length; i += 6) {
+  for (let i = 0; i < batch.length; i += 5) {
     await Promise.all(
-      now.slice(i, i + 6).map(async (r) => {
+      batch.slice(i, i + 5).map(async (r) => {
         try {
           await put(marker(r.sub), JSON.stringify({ status: 'sending', cohort, at: new Date().toISOString() }), { access: 'private', contentType: 'application/json', addRandomSuffix: false, allowOverwrite: false })
         } catch {
@@ -150,7 +187,9 @@ export async function sendAll(cohort: Cohort): Promise<{ sent: number; failed: n
         }
         const a = await getAccount(r.sub)
         const letter = a ? letterFor(a, cohort) : null
-        const out = letter ? await sendMail({ to: r.email, ...letter }, { requireOwnSender: true, noFallback: true }).catch(() => ({ ok: false as const })) : { ok: false as const }
+        const out = letter
+          ? await sendMail({ to: r.email, ...letter, headers: optOutHeaders(r.sub) }, { requireOwnSender: true, noFallback: true }).catch(() => ({ ok: false as const }))
+          : { ok: false as const }
         if (out.ok) {
           await put(marker(r.sub), JSON.stringify({ status: 'sent', cohort, at: new Date().toISOString() }), { access: 'private', contentType: 'application/json', addRandomSuffix: false, allowOverwrite: true }).catch(() => {})
           sent++
@@ -162,7 +201,8 @@ export async function sendAll(cohort: Cohort): Promise<{ sent: number; failed: n
       }),
     )
   }
-  const left = Math.max(0, recipients.length - now.length)
-  console.log('[winback]', JSON.stringify({ cohort, sent, failed, skipped, left }))
-  return { sent, failed, skipped, left }
+  const left = Math.max(0, recipients.length - sent - skipped)
+  const todayLeft = Math.max(0, today.left - sent)
+  console.log('[winback]', JSON.stringify({ cohort, sent, failed, skipped, left, todayLeft, day: today.day }))
+  return { sent, failed, skipped, left, todayLeft }
 }

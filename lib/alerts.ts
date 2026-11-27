@@ -18,6 +18,7 @@ import { postedOn } from './format'
 import { jsearchEnabled, searchJobs } from './jsearch'
 import { getAccount } from './ledger'
 import { sendMail } from './mail'
+import { isOptedOut } from './optout'
 import type { Job } from './types'
 
 export interface Alert {
@@ -312,6 +313,7 @@ async function alertOne(sub: string, now: number): Promise<Outcome> {
   const account = await getAccount(sub)
   if (!account) return skip('no_account')
   if (await isBlocked('sub', sub)) return skip('blocked')
+  if (await isOptedOut(sub)) return skip('opted_out')
   const to = account.email || a.email
   if (!to) return skip('no_email')
 
