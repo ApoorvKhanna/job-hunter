@@ -11,7 +11,8 @@ export const maxDuration = 120
 // ── the deep source (TheirStack, via the provider) ──────────────────────────
 // Bills a flat 40c per call regardless of rows. Free searches never touch it:
 // it runs only on a deep search, which spends one of the account's deep
-// searches (they come with email packs), and only when it added postings.
+// searches (they come with email packs) whenever the call goes through. A
+// failed call is not billed upstream, so it gives the deep search back.
 interface RawJob {
   id: number
   job_title: string
@@ -123,7 +124,9 @@ export async function POST(req: Request) {
       const noDeep = { ok: false as const, code: 'recharge', reason: 'deep' as const, message: 'Deep search comes with any email pack.' }
       if (deep && (account.deep ?? 0) < 1) return noDeep
       // A deep search is taken before the 40¢ call, so parallel deep searches
-      // cannot all reach it, and given back if it found nothing new.
+      // cannot all reach it. It is given back only if the call fails: a call
+      // that went through is billed even when it finds nothing new, so giving
+      // it back then would make empty deep searches free and endlessly repeatable.
       const reserveDeep = async (): Promise<boolean> => {
         try {
           await useDeep(account.sub)
@@ -182,7 +185,7 @@ export async function POST(req: Request) {
             stats.theirstack = -1
           }
           stats.deep_added = jobs.length - before
-          if (jobs.length <= before) await giveDeepBack()
+          if (!Array.isArray(topUp)) await giveDeepBack()
           // The deeper source failing is not the user's problem when the
           // cheap source already found something.
           if (!Array.isArray(topUp) && jobs.length === 0) return { ok: false, code: topUp.error, message: topUp.message }
@@ -205,7 +208,7 @@ export async function POST(req: Request) {
         // No cheap source configured: only a deep search runs at all.
         if (!(await reserveDeep())) return noDeep
         const out = await legacySearch(account, titles, days, country, remote, page)
-        if (!Array.isArray(out) || out.length === 0) await giveDeepBack()
+        if (!Array.isArray(out)) await giveDeepBack()
         if (!Array.isArray(out)) return { ok: false, code: out.error, message: out.message }
         stats.theirstack_only = out.length
         jobs = out

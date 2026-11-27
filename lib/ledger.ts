@@ -327,12 +327,12 @@ export async function spendEmail(sub: string, legacyPrice: number): Promise<{ ac
   return { account, paidWith }
 }
 
-/** Give back a deep search that found nothing new. */
+/** Give back a deep search whose call failed (and so was not billed). */
 export async function returnDeep(sub: string): Promise<Account> {
   return mutate(sub, (a) => {
     a.deep = (a.deep ?? 0) + 1
     a.counts = { ...a.counts, deep: Math.max(0, (a.counts?.deep ?? 0) - 1) }
-    log(a, 'credit', 0, 'deep search returned (nothing new)')
+    log(a, 'credit', 0, 'deep search returned (call failed)')
   })
 }
 

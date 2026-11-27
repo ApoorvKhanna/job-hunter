@@ -29,7 +29,8 @@ Live: https://thejobhunter.in (the old job-hunter-in.vercel.app address redirect
   Google Jobs underneath) carries every free search, at roughly 1/100th the
   per-job cost. When it returns fewer than 10 fresh matches the page offers a
   deep search: TheirStack tops the page up inside the same date window, and
-  one of the account's deep searches is used only if it added postings. Free
+  one of the account's deep searches is used whenever that call goes through
+  (it bills per call, results or not); a failed call gives it back. Free
   searches never call TheirStack. Contacts and drafting run through a metered
   backend behind one operator key. The user never sees either backend.
 - Every search logs per-source counts (`[jobs] {"jsearch":7,"theirstack":4,…}`),
@@ -60,7 +61,8 @@ In `lib/prices.ts`. One price in the job hunt: the email. The rest is free
 within a daily allowance per account, which bounds what a non-paying account
 can cost (about 30¢ a day if it uses everything, about 5¢ for a typical
 visitor). The one expensive call, the deep job source (TheirStack, 40¢), is
-never free: it runs only on a deep search, which comes in packs.
+never free: it runs only on a deep search, which comes in packs and is used
+whenever the call goes through.
 
 | Free each day | Never paid | Has paid |
 | --- | --- | --- |
