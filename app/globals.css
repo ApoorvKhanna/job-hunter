@@ -508,3 +508,27 @@ html { scroll-behavior: smooth; }
 .lock-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; background: var(--surface-2); }
 .unlock { border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 8px; padding: 16px 18px; margin: 18px 0; box-shadow: var(--shadow-1), var(--highlight); }
 .unlock ul { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+
+/* ─── Share my score: the menu on the review (app/review/share.tsx) and the
+   public card at /s/<token> (app/s/[token]/page.tsx) ───────────────────── */
+.head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; flex-shrink: 0; }
+.share { position: relative; }
+.share-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 250px; display: grid; gap: 2px; padding: 6px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: var(--shadow-2), var(--highlight); animation: rise var(--dur-2) var(--ease-out) both; }
+.share-menu > a, .share-menu > button { appearance: none; display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; color: var(--ink); background: transparent; border: 0; border-radius: 4px; padding: 8px 10px; text-decoration: none; cursor: pointer; }
+.share-menu > a:hover, .share-menu > button:hover { background: var(--surface); }
+.share-menu > a:focus-visible, .share-menu > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.share-url { width: 100%; margin: 4px 0 0; padding: 6px 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+.share-wait { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+.share-note { margin: 6px 4px 2px; font-size: 12px; line-height: 1.4; }
+@media (max-width: 860px) { .head-side { align-items: flex-start; } .share-menu { right: auto; left: 0; } }
+
+.share-page { max-width: 640px; }
+.share-card { display: flex; flex-direction: column; align-items: center; text-align: center; background: var(--hero-bg); color: var(--hero-ink); border-radius: 8px; padding: 36px 28px 32px; box-shadow: var(--shadow-2), inset 0 0 0 1px oklch(1 0 0 / 0.08); border-bottom: 4px solid var(--gold); }
+.share-kicker { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: oklch(0.83 0.09 88); }
+.share-score { font-family: var(--serif); font-size: 128px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; margin: 14px 0 8px; }
+.share-score small { font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 26px; font-weight: 400; letter-spacing: 0; color: oklch(0.83 0.09 88); margin-left: 4px; }
+.share-roles { font-size: 17px; opacity: 0.88; margin: 0 0 22px; max-width: 46ch; }
+.share-card .btn { background: oklch(0.964 0.012 91.5); color: oklch(0.206 0.016 273.9); border-color: transparent; }
+.share-card .btn:hover { background: oklch(1 0 0); }
+.share-about { margin: 16px 4px 0; text-align: center; }
+@media (max-width: 480px) { .share-score { font-size: 104px; } }

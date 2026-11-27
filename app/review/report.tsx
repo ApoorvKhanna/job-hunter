@@ -6,6 +6,7 @@ import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
 import Icon from '../icons'
 import Heatmap, { type HeatMode } from './heatmap'
+import ShareScore from './share'
 import type { Block } from '@/lib/layout'
 import type { Links, SourceKey } from '@/lib/links'
 import { type Currency, type Wallet, money } from '@/lib/prices'
@@ -171,9 +172,12 @@ export default function Report({ email, wallet: startWallet, currency, price, pa
             ))}
           </div>
         </div>
-        <div className="head-scores">
-          <div><Score value={ev.overall} /><span className="small muted">Overall</span></div>
-          <div><Score value={scan.score} /><span className="small muted">6-second scan</span></div>
+        <div className="head-side">
+          <div className="head-scores">
+            <div><Score value={ev.overall} /><span className="small muted">Overall</span></div>
+            <div><Score value={scan.score} /><span className="small muted">6-second scan</span></div>
+          </div>
+          <ShareScore reviewId={review.id} score={scan.score} />
         </div>
       </header>
 

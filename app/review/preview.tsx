@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Credits, { type PayConfig } from '../credits'
 import Header from '../header'
 import Heatmap, { type HeatMode } from './heatmap'
+import ShareScore from './share'
 import type { Block, Fixation } from '@/lib/layout'
 import { type Currency, MIN_CHECKOUT, type Wallet, money } from '@/lib/prices'
 import { track } from '@/lib/track'
@@ -100,11 +101,14 @@ export default function Preview({ email, wallet: startWallet, currency, price, p
           <h1 className="report-title">Your 6-second scan</h1>
           <p className="muted" style={{ margin: 0 }}>For {review.roles.join(', ')}</p>
         </div>
-        <div className="head-scores">
-          <div>
-            <span className={`score${tone(scan.score)}`}>{scan.score ?? '–'}<small>/100</small></span>
-            <span className="small muted">6-second scan</span>
+        <div className="head-side">
+          <div className="head-scores">
+            <div>
+              <span className={`score${tone(scan.score)}`}>{scan.score ?? '–'}<small>/100</small></span>
+              <span className="small muted">6-second scan</span>
+            </div>
           </div>
+          <ShareScore reviewId={review.id} score={scan.score} />
         </div>
       </header>
 
