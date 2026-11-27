@@ -53,6 +53,9 @@ export interface Review {
   }
   /** The free 6-second scan, made before paying. The paid run reuses it. */
   preview?: { scan: ScanResult; at: string }
+  /** The public share card for this review's scan score (lib/share-store.ts),
+   *  once the owner has shared it. One per review. */
+  shareToken?: string
   result?: {
     scan: ScanResult
     evaluation: Evaluation
