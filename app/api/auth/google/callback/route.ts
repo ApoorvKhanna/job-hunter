@@ -5,6 +5,7 @@ import { attachCustomer } from '@/lib/customer-flow'
 import { isBlocked } from '@/lib/blocks'
 import { IP_GATE, claimNetwork, clientIp, networkKey } from '@/lib/ipgate'
 import { ensureAccount, getAccount } from '@/lib/ledger'
+import { captureServer } from '@/lib/posthog-server'
 import { currencyForCountry } from '@/lib/prices'
 import { STATE_COOKIE, sessionCookie } from '@/lib/session'
 
@@ -36,7 +37,8 @@ export async function GET(req: Request) {
   let noWelcome = false
   let network: string | undefined
   const ip = clientIp(req)
-  if (IP_GATE !== 'off' && ip && !(await getAccount(who.sub))) {
+  const isNew = !(await getAccount(who.sub))
+  if (IP_GATE !== 'off' && ip && isNew) {
     const claim = await claimNetwork(ip, who.sub)
     network = networkKey(ip)
     if (!claim.first) {
@@ -48,6 +50,7 @@ export async function GET(req: Request) {
   // Rupees for India, dollars for everyone else, fixed at sign-up.
   const currency = currencyForCountry(req.headers.get('x-vercel-ip-country'), DEFAULT_CURRENCY)
   await ensureAccount(who, { noWelcome, network, currency })
+  if (isNew) await captureServer('signed_up', who.email, { currency, welcome_email: !noWelcome })
   // Their own Vaaya wallet, when the feature is on. Best-effort by design.
   await attachCustomer(who.sub, who.email)
   const res = NextResponse.redirect(`${APP_URL}/app`)

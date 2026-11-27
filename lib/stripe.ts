@@ -11,6 +11,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { APP_NAME, APP_URL, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, UPI_ID, UPI_NAME } from './env'
 import { creditPack, creditTopUp, getAccount } from './ledger'
+import { captureServer } from './posthog-server'
 import { type Currency, money, packById, packLabel } from './prices'
 
 const API = 'https://api.stripe.com/v1'
@@ -38,12 +39,17 @@ export interface CheckoutSession {
   metadata?: Record<string, string> | null
 }
 
-async function stripe<T>(method: 'GET' | 'POST', path: string, form?: Record<string, string>): Promise<T | null> {
+/** The API version that knows Checkout's per-session branding. Pinned on the
+ *  calls that need it, so the account's default version can stay as it is. */
+const BRANDED_VERSION = '2025-12-15.clover'
+
+async function stripe<T>(method: 'GET' | 'POST', path: string, form?: Record<string, string>, version?: string): Promise<T | null> {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${STRIPE_SECRET_KEY}`,
       ...(form ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+      ...(version ? { 'stripe-version': version } : {}),
     },
     body: form ? new URLSearchParams(form) : undefined,
   })
@@ -69,7 +75,7 @@ export async function createCheckout(
   opts: { path: string; label: string; purpose: 'pack' | 'review'; reviewId?: string; packId?: string },
 ): Promise<string | null> {
   const join = opts.path.includes('?') ? '&' : '?'
-  const session = await stripe<CheckoutSession>('POST', '/checkout/sessions', {
+  const form: Record<string, string> = {
     mode: 'payment',
     success_url: `${APP_URL}${opts.path}${join}topup={CHECKOUT_SESSION_ID}`,
     cancel_url: `${APP_URL}${opts.path}`,
@@ -85,8 +91,15 @@ export async function createCheckout(
     'line_items[0][price_data][currency]': currency,
     'line_items[0][price_data][unit_amount]': String(amount),
     'line_items[0][price_data][product_data][name]': opts.label,
-  })
-  return session?.url ?? null
+  }
+  // The Stripe account is shared with other products: show this one's name at
+  // the top of the page, not the company's. If Stripe ever refuses the
+  // branding, open the plain page rather than no page.
+  const branded = await stripe<CheckoutSession>('POST', '/checkout/sessions', { ...form, 'branding_settings[display_name]': APP_NAME }, BRANDED_VERSION)
+  if (branded?.url) return branded.url
+  console.error('[stripe] branded checkout refused, opening the plain one')
+  const plain = await stripe<CheckoutSession>('POST', '/checkout/sessions', form)
+  return plain?.url ?? null
 }
 
 export async function getCheckout(id: string): Promise<CheckoutSession | null> {
@@ -123,13 +136,19 @@ export async function settleCheckout(session: CheckoutSession): Promise<{ sub: s
       return null
     }
     const { credited } = await creditPack(sub, session.id, pack, session.amount_total)
-    if (credited) console.log('[topup] pack', JSON.stringify({ sub, pack: pack.id, amount: session.amount_total, currency: account.currency, session: session.id }))
+    if (credited) {
+      console.log('[topup] pack', JSON.stringify({ sub, pack: pack.id, amount: session.amount_total, currency: account.currency, session: session.id }))
+      await captureServer('pack_bought', account.email, { pack: pack.id, amount: session.amount_total, currency: account.currency })
+    }
     return { sub, amount: session.amount_total, currency: account.currency, credited, what: packLabel(pack) }
   }
   // Money: a review payment, or a top-up opened before packs existed.
   const note = account.currency === 'inr' ? 'Top-up (UPI or card)' : 'Top-up (card)'
   const { credited } = await creditTopUp(sub, session.id, session.amount_total, note)
-  if (credited) console.log('[topup]', JSON.stringify({ sub, amount: session.amount_total, currency: account.currency, session: session.id }))
+  if (credited) {
+    console.log('[topup]', JSON.stringify({ sub, amount: session.amount_total, currency: account.currency, session: session.id }))
+    await captureServer(session.metadata?.purpose === 'review' ? 'review_paid' : 'credits_bought', account.email, { amount: session.amount_total, currency: account.currency })
+  }
   return { sub, amount: session.amount_total, currency: account.currency, credited, what: money(session.amount_total, account.currency) }
 }
 

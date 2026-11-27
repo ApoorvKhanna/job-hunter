@@ -61,6 +61,7 @@ export default function Admin() {
             </div>
           ))
         : null}
+      {token ? <WinBack token={token} /> : null}
       <h2>Pending UPI recharges</h2>
       {rows && rows.every((r) => r.pending.length === 0) ? <p className="muted">None. Payments up to the daily cap are credited instantly and listed below for review.</p> : null}
       {rows?.map((r) =>
@@ -135,6 +136,62 @@ export default function Admin() {
         </table>
       </div>
     </main>
+  )
+}
+
+interface WinBackPreview {
+  count: number
+  sample: { subject: string; text: string } | null
+  recipients: Array<{ email: string; name: string; createdAt: string; line: string }>
+}
+
+// The one-time note to launch-day sign-ups (lib/winback.ts). Preview first:
+// the list and the exact text. Sending asks once more, and nobody gets it twice.
+function WinBack({ token }: { token: string }) {
+  const [preview, setPreview] = useState<WinBackPreview | null>(null)
+  const [state, setState] = useState('')
+  async function look() {
+    setState('loading…')
+    const r = await fetch('/api/admin/winback', { headers: { 'x-admin-token': token } })
+    if (!r.ok) return setState('could not load')
+    setPreview(((await r.json()) as { data: WinBackPreview }).data)
+    setState('')
+  }
+  async function send() {
+    if (!preview || !window.confirm(`Send the note to ${preview.count} people? Each person gets it once.`)) return
+    setState('sending…')
+    const r = await fetch('/api/admin/winback', { method: 'POST', headers: { 'x-admin-token': token, 'content-type': 'application/json' }, body: JSON.stringify({ send: true }) })
+    const j = (await r.json().catch(() => null)) as { data?: { sent: number; failed: number; skipped: number } } | null
+    setState(j?.data ? `sent ${j.data.sent}, failed ${j.data.failed}, already had it ${j.data.skipped}` : 'send failed')
+    void look()
+  }
+  return (
+    <section className="card" style={{ margin: '18px 0' }}>
+      <div className="row between">
+        <b>Launch-day win-back note</b>
+        <span className="row">
+          <button className="btn ghost sm" onClick={look}>Preview</button>
+          {preview && preview.count > 0 ? <button className="btn sm" onClick={send}>Send to {preview.count} people</button> : null}
+        </span>
+      </div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>Signed up 26 Nov to 27 Nov 12:10 IST, never paid, not blocked, not sent before. {state}</p>
+      {preview ? (
+        <>
+          {preview.sample ? (
+            <>
+              <p className="small" style={{ margin: '12px 0 4px' }}><b>Subject:</b> {preview.sample.subject}</p>
+              <pre className="note" style={{ whiteSpace: 'pre-wrap' }}>{preview.sample.text}</pre>
+              <p className="small muted">The balance line changes per person (shown below).</p>
+            </>
+          ) : <p className="muted">Nobody left to send to.</p>}
+          <ul className="small" style={{ maxHeight: 260, overflow: 'auto', paddingLeft: 18 }}>
+            {preview.recipients.map((r) => (
+              <li key={r.email}>{r.name} <span className="muted">{r.email} · {new Date(r.createdAt).toLocaleString('en-IN')} · {r.line}</span></li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </section>
   )
 }
 
